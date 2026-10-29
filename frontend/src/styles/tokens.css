@@ -1,0 +1,31 @@
+/* 朱墨体系：与原型同一套变量 */
+:root {
+  --ink: #161a18; --ink2: #4c544f; --ink3: #7b837d; --ink4: #a2a9a2;
+  --paper: #eceee8; --card: #f8f9f6; --card2: #f2f4ee; --card3: #e8ebe2;
+  --line: #d5dad1; --line2: #e2e6dd;
+  --zhu: #a62b20; --zhu-soft: #f4e6e3; --zhu-line: #e0bdb7;
+  --qing: #2f4f4a; --qing-soft: #e3eae6;
+  --shao: #8a5a18; --shao-soft: #f5ecdd;
+  --cang: #2f6b4f; --cang-soft: #e2ede6;
+  --lan: #2c5d7c; --lan-soft: #e3ebf1;
+  --r: 2px; --r2: 3px;
+  --rail: 64px; --sess: 264px; --ev: 344px;
+  --font-ui: "PingFang SC", "HarmonyOS Sans SC", "Source Han Sans SC", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-src: "Songti SC", "Source Han Serif SC", "Noto Serif SC", SimSun, "STSong", serif;
+  --sh: 0 24px 60px -24px rgba(22, 26, 24, 0.42);
+}
+
+* { box-sizing: border-box; }
+
+html, body, #app { height: 100%; margin: 0; }
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.view { padding: 24px; }

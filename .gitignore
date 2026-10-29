@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+frontend/dist/
+frontend/.vite/
+*.tsbuildinfo
+
+# 环境与密钥
+.env
+.env.local
+*.local
+
+# 运行时数据（SQLite / Chroma / 上传文件 / 导出件）
+backend/data/*.db
+backend/data/*.db-wal
+backend/data/*.db-shm
+backend/data/chroma/
+backend/data/files/
+backend/data/exports/
+backend/data/backup/
+
+# 模型缓存
+.cache/
+models/
+*.pt
+*.bin
+*.safetensors
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

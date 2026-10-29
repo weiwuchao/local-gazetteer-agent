@@ -1,0 +1,53 @@
+[tool.poetry]
+name = "local-gazetteer-agent"
+version = "0.1.0"
+description = "中国县市 AI 智能体：县志检索增强问答与报告生成"
+authors = ["local-gazetteer-agent"]
+readme = "README.md"
+packages = [{ include = "app" }]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.110"
+uvicorn = { version = "^0.29", extras = ["standard"] }
+pydantic = "^2.6"
+pydantic-settings = "^2.2"
+
+langchain-core = "^0.2"
+langchain-openai = "^0.1"
+chromadb = "^0.4"
+sentence-transformers = "^2.7"
+torch = "^2.2"
+tiktoken = "^0.6"
+
+argon2-cffi = "^23.1"
+pyjwt = "^2.8"
+python-multipart = "^0.0.9"
+
+pymupdf = "^1.24"
+python-docx = "^1.1"
+jieba = "^0.42"
+opencc-python-reimplemented = "^0.1"
+python-magic = "^0.4"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0"
+pytest-asyncio = "^0.23"
+httpx = "^0.27"
+ruff = "^0.3"
+import-linter = "^2.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "TID"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

@@ -1,0 +1,2463 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>问志 · 县域方志智能问答 — 交互原型 v1.0</title>
+<style>
+/* ============ 1. tokens ============ */
+:root{
+  --ink:#161a18; --ink2:#4c544f; --ink3:#7b837d; --ink4:#a2a9a2;
+  --paper:#eceee8; --card:#f8f9f6; --card2:#f2f4ee; --card3:#e8ebe2;
+  --line:#d5dad1; --line2:#e2e6dd;
+  --zhu:#a62b20; --zhu-soft:#f4e6e3; --zhu-line:#e0bdb7;
+  --qing:#2f4f4a; --qing-soft:#e3eae6;
+  --shao:#8a5a18; --shao-soft:#f5ecdd;
+  --cang:#2f6b4f; --cang-soft:#e2ede6;
+  --lan:#2c5d7c; --lan-soft:#e3ebf1;
+  --r:2px; --r2:3px;
+  --rail:64px; --sess:264px; --ev:344px;
+  --font-ui:"PingFang SC","HarmonyOS Sans SC","Source Han Sans SC","Noto Sans SC","Microsoft YaHei",system-ui,sans-serif;
+  --font-src:"Songti SC","Source Han Serif SC","Noto Serif SC",SimSun,"STSong",serif;
+  --sh:0 24px 60px -24px rgba(22,26,24,.42);
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;padding:0;height:100%}
+body{
+  font-family:var(--font-ui); background:var(--paper); color:var(--ink);
+  font-size:14px; line-height:1.6; -webkit-font-smoothing:antialiased;
+  overflow:hidden;
+}
+body[data-view="login"]{overflow:auto}
+h1,h2,h3,h4,p,ul,ol,figure,blockquote{margin:0}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+a{color:inherit;text-decoration:none}
+svg{display:block}
+::selection{background:#c9d6cd}
+:focus-visible{outline:2px solid var(--qing);outline-offset:2px;border-radius:1px}
+.num{font-variant-numeric:tabular-nums}
+
+/* thin scrollbars */
+*{scrollbar-width:thin;scrollbar-color:#c3c9c0 transparent}
+*::-webkit-scrollbar{width:9px;height:9px}
+*::-webkit-scrollbar-thumb{background:#c8cec5;border-radius:9px;border:2px solid var(--paper)}
+*::-webkit-scrollbar-track{background:transparent}
+
+/* ============ 2. primitives ============ */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  height:32px;padding:0 12px;border:1px solid var(--line);border-radius:var(--r);
+  background:var(--card);color:var(--ink);font-size:13px;line-height:1;
+  transition:background .14s,border-color .14s,color .14s;
+  white-space:nowrap;
+}
+.btn:hover{background:#fff;border-color:#c2c9bd}
+.btn:active{transform:translateY(.5px)}
+.btn--primary{background:var(--qing);border-color:var(--qing);color:#f4f7f4;font-weight:500}
+.btn--primary:hover{background:#3a5f58;border-color:#3a5f58}
+.btn--zhu{background:var(--zhu);border-color:var(--zhu);color:#fdf6f4;font-weight:500}
+.btn--zhu:hover{background:#8f241a;border-color:#8f241a}
+.btn--ghost{background:transparent;border-color:transparent;color:var(--ink2)}
+.btn--ghost:hover{background:var(--card2);color:var(--ink)}
+.btn--line{border-style:dashed;color:var(--ink2)}
+.btn[disabled],.btn[aria-disabled="true"]{
+  opacity:.42;cursor:not-allowed;background:var(--card2);border-color:var(--line);
+  color:var(--ink3);transform:none;
+}
+.btn--sm{height:27px;padding:0 9px;font-size:12px}
+.btn--icon{width:32px;padding:0}
+.btn--lg{height:38px;padding:0 18px;font-size:14px}
+
+.chip{
+  display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 8px;
+  border:1px solid var(--line);border-radius:var(--r);background:var(--card);
+  font-size:12px;color:var(--ink2);white-space:nowrap;
+}
+.chip--q{border-radius:14px;height:28px;padding:0 12px;background:var(--card);cursor:pointer;transition:.14s}
+.chip--q:hover{border-color:var(--qing);color:var(--qing);background:#fff}
+.chip--on{background:var(--qing);border-color:var(--qing);color:#f2f6f3}
+
+.badge{
+  display:inline-flex;align-items:center;gap:5px;height:21px;padding:0 7px;
+  border-radius:var(--r);font-size:11.5px;letter-spacing:.02em;
+  border:1px solid var(--line);background:var(--card2);color:var(--ink2);
+}
+.badge i{width:5px;height:5px;border-radius:50%;background:currentColor;flex:none}
+.badge--fact{color:var(--cang);background:var(--cang-soft);border-color:#c6dbcf}
+.badge--partial{color:var(--shao);background:var(--shao-soft);border-color:#e4d3b4}
+.badge--refuse{color:var(--zhu);background:var(--zhu-soft);border-color:var(--zhu-line)}
+.badge--boundary{color:var(--ink2);background:var(--card3);border-color:var(--line)}
+
+.dot{width:6px;height:6px;border-radius:50%;flex:none;display:inline-block}
+
+.seal{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:26px;height:26px;background:var(--zhu);color:#fdf3f0;
+  font-family:var(--font-src);font-size:16px;font-weight:700;line-height:1;
+  border-radius:1px;letter-spacing:0;
+}
+.hair{height:1px;background:var(--line2);border:0;margin:0}
+.kbd{
+  font-size:11px;color:var(--ink3);border:1px solid var(--line);border-radius:2px;
+  padding:0 4px;background:var(--card);line-height:16px;
+}
+.monoish{font-variant-numeric:tabular-nums;letter-spacing:.01em}
+
+/* ============ 3. topbar ============ */
+#topbar{
+  height:52px;display:flex;align-items:center;gap:16px;padding:0 16px 0 14px;
+  background:var(--card);border-bottom:1px solid var(--line);position:relative;z-index:30;
+}
+body[data-view="login"] #topbar,body[data-view="login"] #shell{display:none}
+.brand{display:flex;align-items:center;gap:9px;min-width:0}
+.brand-name{font-size:16px;font-weight:600;letter-spacing:.06em}
+.brand-sub{font-size:11.5px;color:var(--ink3);letter-spacing:.04em;padding-left:9px;border-left:1px solid var(--line)}
+.tb-spacer{flex:1}
+.tb-group{display:flex;align-items:center;gap:8px}
+.tb-btn{
+  display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 9px;
+  border:1px solid transparent;border-radius:var(--r);font-size:12.5px;color:var(--ink2);
+}
+.tb-btn:hover{background:var(--card2);color:var(--ink)}
+.tb-btn[aria-pressed="true"]{background:var(--qing-soft);border-color:#c3d3cc;color:var(--qing)}
+
+/* 县选择器 */
+.region-pick{position:relative}
+.region-btn{
+  display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;
+  border:1px solid var(--line);border-radius:var(--r);background:var(--card);
+  font-size:13px;
+}
+.region-btn:hover{border-color:#c2c9bd;background:#fff}
+.region-btn .era{font-size:11.5px;color:var(--ink3);border-left:1px solid var(--line2);padding-left:8px}
+.region-menu{
+  position:absolute;top:38px;left:0;width:262px;background:var(--card);
+  border:1px solid var(--line);border-radius:var(--r2);box-shadow:0 16px 40px -18px rgba(22,26,24,.4);
+  padding:6px;display:none;
+}
+.region-menu.is-open{display:block}
+.region-menu-hd{font-size:11.5px;color:var(--ink3);padding:6px 8px 4px}
+.region-opt{display:flex;width:100%;align-items:center;gap:8px;padding:7px 8px;border-radius:2px;font-size:13px;text-align:left}
+.region-opt:hover{background:var(--card2)}
+.region-opt .n{flex:1}
+.region-opt .c{font-size:11.5px;color:var(--ink3)}
+
+/* 原型角色开关（非产品功能） */
+.role-switch{
+  display:flex;align-items:center;gap:0;border:1px dashed var(--zhu-line);
+  border-radius:var(--r);overflow:hidden;background:#fdf8f6;
+}
+.role-switch .lab{
+  font-size:10.5px;color:var(--zhu);padding:0 7px;letter-spacing:.04em;
+  border-right:1px dashed var(--zhu-line);height:30px;display:flex;align-items:center;
+}
+.role-switch button{
+  height:30px;padding:0 10px;font-size:12px;color:var(--ink2);
+}
+.role-switch button[aria-pressed="true"]{background:var(--zhu);color:#fdf3f0;font-weight:500}
+.avatar{
+  width:28px;height:28px;border-radius:50%;background:var(--qing-soft);color:var(--qing);
+  display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;
+  border:1px solid #c9d8d1;
+}
+
+/* ============ 4. shell + rail ============ */
+#shell{display:grid;grid-template-columns:var(--rail) minmax(0,1fr);height:calc(100vh - 52px)}
+#rail{
+  background:var(--card);border-right:1px solid var(--line);
+  display:flex;flex-direction:column;align-items:center;padding:10px 0 8px;gap:4px;
+}
+.rail-brand{display:flex;justify-content:center;padding:2px 0 10px}
+.rail-items{display:flex;flex-direction:column;gap:2px;width:100%;align-items:center;flex:1}
+.rail-item{
+  width:52px;padding:7px 0 6px;border-radius:var(--r);display:flex;flex-direction:column;
+  align-items:center;gap:3px;font-size:10.5px;color:var(--ink3);letter-spacing:.02em;
+  transition:background .14s,color .14s;position:relative;
+}
+.rail-item:hover{background:var(--card2);color:var(--ink)}
+.rail-item[aria-current="page"]{background:var(--qing-soft);color:var(--qing);font-weight:500}
+.rail-item[aria-current="page"]::before{
+  content:"";position:absolute;left:-6px;top:8px;bottom:8px;width:2px;background:var(--zhu);
+}
+.rail-item .neo{position:absolute;top:6px;right:9px;width:4px;height:4px;border-radius:50%;background:var(--zhu)}
+body[data-role="user"] [data-admin]{display:none!important}
+
+#main{position:relative;overflow:hidden;background:var(--paper)}
+.view{display:none;height:100%}
+.view.is-on{display:block}
+
+/* ============ 5. chat ============ */
+.chat{display:grid;grid-template-columns:var(--sess) minmax(0,1fr) var(--ev);grid-template-rows:minmax(0,1fr);height:100%}
+.chat.no-ev{grid-template-columns:var(--sess) minmax(0,1fr)}
+
+/* sessions */
+.sessions{
+  border-right:1px solid var(--line);background:var(--card);display:flex;flex-direction:column;
+  min-width:0;
+}
+.sess-hd{padding:12px 12px 8px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.sess-hd .t{font-size:13px;font-weight:600;letter-spacing:.02em}
+.sess-list{flex:1;overflow:auto;padding:0 8px 12px}
+.sess-group{
+  font-size:11px;color:var(--ink4);padding:12px 6px 4px;letter-spacing:.06em;
+}
+.sess{
+  display:block;width:100%;text-align:left;padding:8px;border-radius:var(--r);
+  font-size:13px;color:var(--ink2);line-height:1.45;border-left:2px solid transparent;
+}
+.sess:hover{background:var(--card2)}
+.sess.is-active{background:#fff;color:var(--ink);border-left-color:var(--zhu);box-shadow:0 1px 0 var(--line2)}
+.sess .q{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sess .m{font-size:11px;color:var(--ink4);margin-top:2px;display:flex;gap:6px;align-items:center}
+.sess-ft{border-top:1px solid var(--line2);padding:8px 12px;font-size:11px;color:var(--ink3);line-height:1.5}
+
+/* thread */
+.thread-wrap{display:flex;flex-direction:column;min-width:0;background:var(--paper);position:relative}
+.thread-hd{
+  height:44px;flex:none;display:flex;align-items:center;gap:10px;padding:0 16px;
+  border-bottom:1px solid var(--line);background:var(--paper);
+}
+.thread-hd .ttl{font-size:12.5px;color:var(--ink2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.thread-hd .sep{width:1px;height:14px;background:var(--line)}
+.thread{flex:1;overflow:auto;scroll-behavior:smooth}
+.thread-inner{max-width:772px;margin:0 auto;padding:26px 30px 12px}
+
+/* 预览模式横条 */
+.preview-bar{
+  display:none;align-items:center;gap:8px;background:#f6ead9;border-bottom:1px solid #e2cba8;
+  color:var(--shao);font-size:12px;padding:7px 16px;
+}
+body[data-preview="1"] .preview-bar{display:flex}
+
+/* message */
+.msg{margin-bottom:30px;position:relative}
+.msg-who{
+  display:flex;align-items:center;gap:7px;font-size:11px;color:var(--ink4);
+  letter-spacing:.06em;margin-bottom:9px;
+}
+.msg-who .ln{flex:1;height:1px;background:var(--line2)}
+.msg-q .qtext{
+  font-size:15.5px;line-height:1.7;color:var(--ink);background:var(--card);
+  border-left:2px solid var(--qing);padding:11px 14px;border-radius:0 var(--r) var(--r) 0;
+}
+.msg-q .qmeta{font-size:11px;color:var(--ink4);margin-top:5px;display:flex;gap:10px}
+.msg-a{animation:none}
+
+/* 阶段轨迹（生成中） */
+.stages{display:flex;align-items:center;gap:0;flex-wrap:wrap;margin:2px 0 14px}
+.stage{
+  display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink4);
+  padding:3px 9px 3px 0;
+}
+.stage .d{width:5px;height:5px;border-radius:50%;background:currentColor;opacity:.45}
+.stage.is-active{color:var(--zhu);font-weight:500}
+.stage.is-active .d{opacity:1;animation:pulse 1.1s ease-in-out infinite}
+.stage.is-done{color:var(--qing)}
+.stage .arw{width:14px;height:1px;background:var(--line);margin-right:9px}
+@keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.9);opacity:.5}}
+.run-meta{
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:11.5px;color:var(--ink3);
+  margin:-6px 0 16px;padding-bottom:10px;border-bottom:1px dotted var(--line);
+}
+.run-meta .k{color:var(--ink4)}
+.run-meta button{color:var(--qing);border-bottom:1px solid #b9cbc4}
+
+/* 答案正文：断言 + 页边批注 */
+.answer{--gut:42px}
+/* 墨色＝产品说的话（黑体）；宋体只留给引文与原文（别人说的话） */
+.claim{
+  position:relative;padding-left:var(--gut);font-size:15px;line-height:1.95;color:var(--ink);
+  margin-bottom:12px;
+  font-family:var(--font-ui);
+}
+.claim .mark{
+  position:absolute;left:0;top:5px;display:flex;flex-direction:column;gap:2px;align-items:center;
+}
+.cite-no{
+  min-width:17px;height:17px;padding:0 3px;border:1px solid var(--zhu-line);
+  background:var(--zhu-soft);color:var(--zhu);border-radius:2px;
+  font-family:var(--font-ui);font-size:11px;line-height:15px;text-align:center;
+  font-variant-numeric:tabular-nums;transition:.14s;
+}
+.cite-no:hover{background:var(--zhu);color:#fff;border-color:var(--zhu)}
+.claim.is-lead{
+  font-family:var(--font-ui);font-size:17px;line-height:1.85;font-weight:500;letter-spacing:.005em;
+  color:var(--ink);margin-bottom:14px;
+}
+.claim.is-lead .mark{top:8px}
+.claim em{font-style:normal;border-bottom:1px solid var(--zhu-line);background:linear-gradient(transparent 62%,#f6e3df 62%)}
+.claim .q{color:var(--ink2)}
+.answer-section{margin-top:22px}
+.answer-section > .h{
+  font-size:11.5px;color:var(--ink3);letter-spacing:.06em;margin-bottom:9px;
+  display:flex;align-items:center;gap:7px;
+}
+.answer-section > .h::after{content:"";flex:1;height:1px;background:var(--line2)}
+
+/* 存疑 / 冲突 */
+.caveat{
+  border:1px solid var(--zhu-line);border-left-width:2px;background:#fcf7f5;
+  border-radius:0 var(--r) var(--r) 0;padding:11px 13px;margin:4px 0 14px;
+}
+.caveat .ch{
+  display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--zhu);
+  font-weight:500;letter-spacing:.03em;margin-bottom:7px;
+}
+.caveat p{font-size:13px;line-height:1.85;color:var(--ink2);margin-bottom:6px}
+.caveat p:last-child{margin-bottom:0}
+.conflict{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--line);border-radius:var(--r);overflow:hidden;margin:8px 0 12px;background:var(--card)}
+.conflict > div{padding:10px 12px}
+.conflict > div + div{border-left:1px solid var(--line)}
+.conflict .vh{font-size:11px;color:var(--ink3);letter-spacing:.03em;margin-bottom:5px}
+.conflict .vq{font-family:var(--font-src);font-size:13px;line-height:1.85;color:var(--ink)}
+.conflict .vd{font-size:11px;color:var(--zhu);margin-top:6px}
+
+/* 引用卡片组 */
+.cites{display:flex;flex-direction:column;gap:0;border:1px solid var(--line);border-radius:var(--r2);overflow:hidden;background:var(--card)}
+.cites-hd{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:7px 12px;background:var(--card2);border-bottom:1px solid var(--line2);
+  font-size:11.5px;color:var(--ink2);
+}
+.cite-card{
+  display:grid;grid-template-columns:30px 1fr;gap:0;padding:11px 12px;border-bottom:1px solid var(--line2);
+  cursor:pointer;transition:background .14s;text-align:left;width:100%;
+}
+.cite-card:last-child{border-bottom:0}
+.cite-card:hover{background:#fff}
+.cite-card.is-on{background:#fff;box-shadow:inset 2px 0 0 var(--zhu)}
+.cite-card .no{
+  font-size:11px;color:var(--zhu);border:1px solid var(--zhu-line);background:var(--zhu-soft);
+  min-width:17px;height:17px;border-radius:2px;display:flex;align-items:center;justify-content:center;
+  margin-top:2px;width:17px;
+}
+.cite-card .loc{font-size:11.5px;color:var(--ink2);margin-bottom:3px}
+.cite-card .loc .vol{color:var(--ink);font-weight:500}
+.cite-card .snip{
+  font-family:var(--font-src);font-size:13px;line-height:1.8;color:var(--ink2);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
+.cite-card .sup{font-size:11px;color:var(--ink4);margin-top:4px}
+
+/* 追问建议 */
+.followups{display:flex;flex-wrap:wrap;gap:7px;margin-top:6px}
+.fu{
+  display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);
+  background:var(--card);border-radius:14px;height:28px;padding:0 11px;font-size:12.5px;color:var(--ink2);
+  transition:.14s;
+}
+.fu:hover{border-color:var(--qing);color:var(--qing);background:#fff}
+
+/* 反馈条 */
+.fb{display:flex;align-items:center;gap:3px;margin-top:16px;padding-top:10px;border-top:1px dotted var(--line)}
+.fb .lbl{font-size:11px;color:var(--ink4);margin-right:4px}
+.fb button{
+  height:26px;padding:0 8px;border-radius:var(--r);font-size:12px;color:var(--ink3);
+  display:inline-flex;align-items:center;gap:5px;
+}
+.fb button:hover{background:var(--card2);color:var(--ink)}
+.fb button[aria-pressed="true"]{background:var(--qing-soft);color:var(--qing)}
+.fb .sp{flex:1}
+.fb .meta{font-size:10.5px;color:var(--ink4);font-variant-numeric:tabular-nums}
+
+/* 边界/拒答卡 */
+.plain{
+  font-size:15px;line-height:1.9;color:var(--ink);font-family:var(--font-ui);
+  padding-left:var(--gut);
+}
+.plain strong{font-family:var(--font-ui);font-weight:500}
+.nearby{border:1px solid var(--line);border-radius:var(--r);background:var(--card);margin-top:12px;overflow:hidden}
+.nearby-hd{padding:8px 12px;font-size:11.5px;color:var(--ink3);background:var(--card2);border-bottom:1px solid var(--line2);display:flex;justify-content:space-between}
+.nearby-item{padding:10px 12px;border-bottom:1px solid var(--line2);cursor:pointer}
+.nearby-item:last-child{border-bottom:0}
+.nearby-item:hover{background:#fff}
+.nearby-item .nm{font-size:11.5px;color:var(--ink3);margin-bottom:3px;display:flex;justify-content:space-between}
+.nearby-item .tx{font-family:var(--font-src);font-size:13px;line-height:1.8;color:var(--ink2)}
+.hint-line{
+  display:flex;align-items:flex-start;gap:7px;font-size:12.5px;color:var(--ink3);
+  margin-top:14px;line-height:1.7;
+}
+
+/* composer */
+.composer{flex:none;border-top:1px solid var(--line);background:var(--paper);padding:10px 16px 12px}
+.composer-in{max-width:772px;margin:0 auto}
+.example-row{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:9px}
+.box{
+  border:1px solid var(--line);background:var(--card);border-radius:var(--r2);
+  display:flex;flex-direction:column;transition:border-color .14s,box-shadow .14s;
+}
+.box:focus-within{border-color:#9fb5ac;box-shadow:0 0 0 3px rgba(47,79,74,.08)}
+.box textarea{
+  width:100%;border:0;background:none;resize:none;font:inherit;font-size:14.5px;line-height:1.7;
+  color:var(--ink);padding:11px 13px 4px;min-height:46px;max-height:150px;outline:none;
+}
+.box textarea::placeholder{color:var(--ink4)}
+.box-ft{display:flex;align-items:center;gap:8px;padding:5px 9px 8px 13px}
+.box-ft .hint{font-size:11px;color:var(--ink4)}
+.box-ft .sp{flex:1}
+.send{
+  display:inline-flex;align-items:center;gap:6px;height:29px;padding:0 12px;
+  background:var(--qing);color:#f3f7f4;border-radius:var(--r);font-size:12.5px;font-weight:500;
+}
+.send:hover{background:#3a5f58}
+.send[disabled]{opacity:.4;cursor:not-allowed;background:var(--ink3)}
+.mode-tg{display:flex;border:1px solid var(--line);border-radius:var(--r);overflow:hidden;height:26px}
+.mode-tg button{font-size:11.5px;padding:0 8px;color:var(--ink3);height:100%}
+.mode-tg button[aria-pressed="true"]{background:var(--card3);color:var(--ink);font-weight:500}
+.disclaim{font-size:10.5px;color:var(--ink4);text-align:center;margin-top:8px;letter-spacing:.02em}
+
+/* empty */
+.empty-chat{max-width:600px;margin:0 auto;padding:8vh 30px 0}
+.empty-chat .seal{width:34px;height:34px;font-size:21px}
+.empty-chat h2{
+  font-size:24px;font-weight:600;letter-spacing:.01em;margin:18px 0 10px;line-height:1.5;
+}
+.empty-chat p{font-size:13.5px;line-height:1.9;color:var(--ink2);margin-bottom:8px}
+.empty-list{margin:26px 0 0;display:flex;flex-direction:column;gap:0;border-top:1px solid var(--line)}
+.empty-item{
+  display:flex;align-items:center;gap:12px;padding:13px 4px;border-bottom:1px solid var(--line);
+  text-align:left;width:100%;transition:.14s;
+}
+.empty-item:hover{background:var(--card);padding-left:10px}
+.empty-item .qn{font-size:11px;color:var(--ink4);width:16px;font-variant-numeric:tabular-nums}
+.empty-item .qt{font-size:14px;color:var(--ink);flex:1}
+.empty-item .qw{font-size:11px;color:var(--ink4)}
+.empty-note{
+  margin-top:24px;font-size:12px;color:var(--ink3);line-height:1.8;
+  border-left:2px solid var(--line);padding-left:10px;
+}
+
+/* ============ 6. evidence panel ============ */
+.evidence{
+  border-left:1px solid var(--line);background:var(--card);display:flex;flex-direction:column;
+  min-width:0;
+}
+.chat.no-ev .evidence{display:none}
+.ev-hd{
+  height:44px;display:flex;align-items:center;gap:8px;padding:0 12px;
+  border-bottom:1px solid var(--line);flex:none;
+}
+.ev-hd .t{font-size:12.5px;font-weight:600;letter-spacing:.04em}
+.ev-hd .sp{flex:1}
+.ev-tabs{display:flex;gap:0;border-bottom:1px solid var(--line2);padding:0 12px;flex:none;overflow:auto}
+.ev-tab{
+  font-size:12px;color:var(--ink3);padding:8px 10px 7px;border-bottom:2px solid transparent;
+  font-variant-numeric:tabular-nums;white-space:nowrap;
+}
+.ev-tab[aria-selected="true"]{color:var(--zhu);border-bottom-color:var(--zhu);font-weight:500}
+.ev-body{flex:1;overflow:auto;padding:14px 14px 20px}
+.ev-src{
+  font-family:var(--font-src);font-size:14px;line-height:2.1;color:var(--ink);
+  background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:24px 14px 13px;
+  text-align:justify;position:relative;
+}
+.ev-src::before{
+  content:"原文";position:absolute;top:-1px;left:-1px;font-family:var(--font-ui);
+  font-size:10px;color:#fff;background:var(--zhu);padding:1px 5px;letter-spacing:.08em;
+}
+.ev-src .cited{background:#faece8;border-bottom:1px solid #d99f96;padding:1px 2px}
+.ev-src .fade{color:var(--ink3)}
+.ev-meta{margin-top:10px;display:grid;grid-template-columns:auto 1fr;gap:4px 10px;font-size:11.5px;color:var(--ink3)}
+.ev-meta b{font-weight:400;color:var(--ink4)}
+.ev-meta span{color:var(--ink2)}
+.ev-ctx{margin-top:14px;border-top:1px dotted var(--line);padding-top:10px}
+.ev-ctx button{font-size:11.5px;color:var(--qing);display:flex;align-items:center;gap:4px}
+.ev-ctx .full{display:none;margin-top:8px;font-family:var(--font-src);font-size:13px;line-height:1.95;color:var(--ink2);text-align:justify}
+.ev-ctx.is-open .full{display:block}
+.ev-acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}
+.ev-empty{padding:12vh 22px 0;text-align:center}
+.ev-empty .ic{color:var(--ink4);margin:0 auto 12px;width:28px;height:28px}
+.ev-empty p{font-size:12.5px;line-height:1.9;color:var(--ink3)}
+.ev-foot{flex:none;padding:8px 14px;border-top:1px solid var(--line2);font-size:10.5px;color:var(--ink4);line-height:1.6}
+
+/* ============ 7. generic page ============ */
+.page{display:flex;flex-direction:column;height:100%}
+.page-hd{
+  flex:none;padding:20px 28px 14px;border-bottom:1px solid var(--line);
+  display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;
+}
+.page-hd .t{font-size:20px;font-weight:600;letter-spacing:.01em;line-height:1.3}
+.page-hd .d{font-size:12px;color:var(--ink3);margin-top:5px;line-height:1.6}
+.page-hd .sp{flex:1}
+.page-body{flex:1;overflow:auto;padding:18px 28px 44px}
+.toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.toolbar .sp{flex:1}
+.search{
+  display:flex;align-items:center;gap:6px;height:32px;padding:0 10px;
+  border:1px solid var(--line);border-radius:var(--r);background:var(--card);color:var(--ink3);
+  min-width:220px;
+}
+.search input{border:0;background:none;outline:none;font:inherit;font-size:13px;color:var(--ink);width:100%}
+.search input::placeholder{color:var(--ink4)}
+
+/* table */
+.tblwrap{border:1px solid var(--line);border-radius:var(--r2);overflow:hidden;background:var(--card)}
+table.tbl{width:100%;border-collapse:collapse}
+.tbl th{
+  text-align:left;font-weight:400;font-size:11.5px;color:var(--ink3);letter-spacing:.04em;
+  padding:9px 12px;background:var(--card2);border-bottom:1px solid var(--line);
+}
+.tbl td{
+  padding:11px 12px;border-bottom:1px solid var(--line2);font-size:13px;vertical-align:middle;
+}
+.tbl tr:last-child td{border-bottom:0}
+.tbl tbody tr:hover{background:#fff}
+.tbl .nm{font-weight:500;color:var(--ink)}
+.tbl .sub{font-size:11px;color:var(--ink4);margin-top:2px}
+.tbl .acts{display:flex;gap:4px;justify-content:flex-end;flex-wrap:wrap}
+.tbl .r,.tbl th.r{text-align:right}
+.st{display:inline-flex;align-items:center;gap:5px;font-size:12px;white-space:nowrap}
+.st .dot{width:6px;height:6px}
+.st--draft{color:#6b726c}.st--draft .dot{background:#6b726c}
+.st--parsing{color:var(--lan)}.st--parsing .dot{background:var(--lan)}
+.st--failed{color:var(--zhu)}.st--failed .dot{background:var(--zhu)}
+.st--proof{color:var(--shao)}.st--proof .dot{background:var(--shao)}
+.st--pub{color:var(--cang)}.st--pub .dot{background:var(--cang)}
+.st--off{color:#565b57}.st--off .dot{background:#565b57}
+.prog{width:64px;height:3px;background:var(--card3);border-radius:2px;overflow:hidden;display:inline-block;vertical-align:middle}
+.prog i{display:block;height:100%;background:var(--lan)}
+
+/* ============ 8. polish workbench ============ */
+.polish{display:grid;grid-template-columns:minmax(0,1fr) 300px;grid-template-rows:minmax(0,1fr);height:100%}
+.polish.no-drawer{grid-template-columns:minmax(0,1fr)}
+.polish-main{display:flex;flex-direction:column;min-width:0}
+.p-bar{
+  flex:none;display:flex;align-items:center;gap:10px;padding:8px 20px;
+  border-bottom:1px solid var(--line);background:var(--card);flex-wrap:wrap;
+}
+.p-bar .doc{font-size:13px;font-weight:500}
+.p-bar .ver{font-size:11px;color:var(--ink3);border:1px solid var(--line);border-radius:2px;padding:0 5px}
+.p-prog{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--ink2);flex:none}
+.p-prog .bar{display:block;width:110px;height:4px;background:var(--card3);border-radius:2px;overflow:hidden;flex:none}
+.p-prog .bar i{display:block;height:100%;background:var(--cang);transition:width .25s}
+.p-list{flex:1;overflow:auto;padding:16px 20px 40px}
+.p-note{
+  font-size:11.5px;color:var(--shao);background:var(--shao-soft);border:1px solid #e6d5b8;
+  border-radius:var(--r);padding:6px 10px;margin-bottom:14px;display:flex;align-items:center;gap:7px;
+}
+.seg-row{
+  display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--line);
+  border-radius:var(--r2);background:var(--card);margin-bottom:12px;overflow:hidden;
+  transition:border-color .16s;
+}
+.seg-row.is-confirmed{border-color:#c3d8cb;background:#fbfcfa}
+.seg-row.is-rejected{opacity:.72}
+.seg-row.is-focus{border-color:var(--zhu-line);box-shadow:0 0 0 3px rgba(166,43,32,.06)}
+.seg-cell{padding:11px 13px 10px;min-width:0}
+.seg-cell + .seg-cell{border-left:1px solid var(--line2);background:#fff}
+.seg-lab{
+  font-size:10.5px;color:var(--ink4);letter-spacing:.06em;margin-bottom:6px;
+  display:flex;align-items:center;gap:6px;
+}
+.seg-lab .tag{
+  font-size:10px;letter-spacing:0;border:1px solid var(--zhu-line);color:var(--zhu);
+  background:var(--zhu-soft);border-radius:2px;padding:0 4px;
+}
+.seg-raw{font-family:var(--font-src);font-size:13.5px;line-height:1.95;color:#6b726c;text-align:justify}
+.seg-pol{font-family:var(--font-src);font-size:13.5px;line-height:1.95;color:var(--ink);text-align:justify}
+.seg-pol ins{background:#d9eade;color:#1c4430;text-decoration:none;border-bottom:1px solid #7fa992;padding:0 1px}
+.seg-pol del{background:#f8e2de;color:#8a2f24;text-decoration:line-through;padding:0 1px}
+.diff-legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--ink3);margin:-4px 0 12px}
+.diff-legend span{display:flex;align-items:center;gap:5px}
+.diff-legend i{width:11px;height:11px;display:inline-block;border-radius:1px}
+.diff-legend .lg-ins{background:#d9eade;border-bottom:1px solid #7fa992}
+.diff-legend .lg-del{background:#f8e2de;border-bottom:1px solid #d9a79f}
+.diff-legend .lg-bad{background:#f7e2dd;border:1px solid #d9a79f}
+.seg-pol .note{
+  font-family:var(--font-ui);font-size:12px;color:var(--ink3);background:var(--card2);
+  border-left:2px solid var(--line);padding:5px 8px;margin-top:8px;line-height:1.7;
+}
+.seg-ft{
+  grid-column:1/-1;display:flex;align-items:center;gap:6px;padding:7px 11px;
+  border-top:1px solid var(--line2);background:var(--card2);
+}
+.seg-ft .sp{flex:1}
+.seg-ft .stt{font-size:11px;color:var(--ink3);display:flex;align-items:center;gap:5px}
+.seg-ft .warn{color:var(--zhu);font-size:11px;display:flex;align-items:center;gap:5px}
+.p-drawer{border-left:1px solid var(--line);background:var(--card);display:flex;flex-direction:column}
+.p-drawer .dh{padding:12px 14px;border-bottom:1px solid var(--line);font-size:12.5px;font-weight:600}
+.p-drawer .db{flex:1;overflow:auto;padding:12px 14px}
+.kv{display:grid;grid-template-columns:76px 1fr;gap:6px 8px;font-size:12px;margin-bottom:12px}
+.kv b{font-weight:400;color:var(--ink4)}
+.kv span{color:var(--ink2);word-break:break-all}
+.sens-list{display:flex;flex-direction:column;gap:6px}
+.sens{
+  font-size:12px;color:var(--ink2);border:1px solid var(--line);border-radius:var(--r);
+  padding:7px 9px;background:#fff;display:flex;gap:7px;align-items:flex-start;line-height:1.6;
+}
+.sens .dot{background:var(--zhu);margin-top:4px}
+.dr-foot{flex:none;padding:10px 14px;border-top:1px solid var(--line2);display:flex;flex-direction:column;gap:6px}
+
+/* ============ 9. reports ============ */
+.rep{display:grid;grid-template-columns:320px minmax(0,1fr);grid-template-rows:minmax(0,1fr);height:100%}
+.rep-side{border-right:1px solid var(--line);background:var(--card);display:flex;flex-direction:column;overflow:auto}
+.rep-side .sh{padding:16px 16px 8px;font-size:12.5px;font-weight:600}
+.tpl{
+  margin:0 12px 8px;border:1px solid var(--line);border-radius:var(--r2);background:#fff;
+  padding:11px 12px;text-align:left;transition:.14s;display:block;width:calc(100% - 24px);
+}
+.tpl:hover{border-color:#b9c8c1;box-shadow:0 1px 0 var(--line)}
+.tpl.is-on{border-color:var(--qing);box-shadow:inset 2px 0 0 var(--qing)}
+.tpl .n{font-size:13.5px;font-weight:500;display:flex;align-items:center;gap:6px}
+.tpl .m{font-size:11px;color:var(--ink4);margin-top:4px;line-height:1.6}
+.rep-main{display:flex;flex-direction:column;min-width:0}
+.rep-body{flex:1;overflow:auto;padding:20px 26px 40px}
+.outline{border:1px solid var(--line);border-radius:var(--r2);background:var(--card);overflow:hidden}
+.ol-hd{
+  padding:9px 14px;background:var(--card2);border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink2);
+}
+.ol-hd .sp{flex:1}
+.ol-row{display:grid;grid-template-columns:24px 1fr auto;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line2);align-items:start}
+.ol-row:last-child{border-bottom:0}
+.ol-row .idx{font-size:11.5px;color:var(--ink4);font-variant-numeric:tabular-nums;padding-top:2px}
+.ol-row .ti{font-size:14px;font-weight:500}
+.ol-row .pt{font-size:12px;color:var(--ink3);margin-top:3px;line-height:1.7}
+.ol-row .rc{font-size:11px;color:var(--ink4);margin-top:4px}
+.ol-row .ops{display:flex;gap:2px;opacity:.45;transition:.14s}
+.ol-row:hover .ops{opacity:1}
+.gen-row{
+  display:grid;grid-template-columns:24px 1fr 88px;gap:10px;align-items:center;
+  padding:10px 14px;border-bottom:1px solid var(--line2);font-size:13px;
+}
+.gen-row:last-child{border-bottom:0}
+.gen-row .gs{font-size:11.5px;color:var(--ink3);text-align:right;display:flex;align-items:center;justify-content:flex-end;gap:6px}
+.gen-row.is-done .gs{color:var(--cang)}
+.gen-row.is-fail .gs{color:var(--zhu)}
+.gen-row.is-run .gs{color:var(--lan)}
+.spin{width:10px;height:10px;border:1.5px solid var(--line);border-top-color:var(--lan);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.rep-doc{
+  background:#fff;border:1px solid var(--line);border-radius:var(--r2);padding:30px 34px;
+  max-width:720px;
+}
+.rep-doc h1{font-family:var(--font-src);font-size:24px;font-weight:700;letter-spacing:.04em;text-align:center;margin-bottom:6px}
+.rep-doc .sub{text-align:center;font-size:12px;color:var(--ink3);margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid var(--line2)}
+.rep-doc h2{font-family:var(--font-src);font-size:16px;font-weight:700;margin:22px 0 9px;letter-spacing:.02em}
+.rep-doc p{font-family:var(--font-src);font-size:14px;line-height:2;text-align:justify;color:var(--ink);margin-bottom:10px}
+.rep-doc p .rf{font-size:10px;vertical-align:super;color:var(--zhu);font-family:var(--font-ui);margin-left:1px}
+.rep-doc .src-list{margin-top:24px;padding-top:12px;border-top:1px solid var(--line)}
+.rep-doc .src-list .h{font-size:11.5px;color:var(--ink3);letter-spacing:.06em;margin-bottom:8px}
+.rep-doc .src-list li{font-size:11.5px;color:var(--ink2);line-height:1.9;list-style:none;display:flex;gap:7px}
+.rep-doc .src-list ul{margin:0;padding:0}
+
+/* ============ 10. trace ============ */
+.trace{display:flex;flex-direction:column;height:100%}
+.tr-hd{flex:none;padding:14px 24px;border-bottom:1px solid var(--line);background:var(--card)}
+.tr-hd .l1{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.tr-hd .q{font-size:15px;font-weight:500}
+.tr-hd .l2{display:flex;gap:16px;flex-wrap:wrap;margin-top:7px;font-size:11.5px;color:var(--ink3)}
+.tr-hd .l2 b{font-weight:400;color:var(--ink4);margin-right:4px}
+.tr-body{flex:1;overflow:auto;padding:16px 24px 40px}
+.wf{display:flex;height:26px;border:1px solid var(--line);border-radius:2px;overflow:hidden;background:var(--card2);margin:8px 0 6px}
+.wf div{
+  height:100%;display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff;
+  border-right:1px solid rgba(255,255,255,.35);overflow:hidden;white-space:nowrap;
+  transition:filter .14s;
+}
+.wf div:hover{filter:brightness(1.12)}
+.wf div:last-child{border-right:0}
+.wf .s0{background:#7b837d}.wf .s1{background:#6b8f86}.wf .s2{background:#8f9f7a}
+.wf .s3{background:var(--qing)}.wf .s4{background:#4a6b52}.wf .s5{background:#2f4a5d}
+.wf .s6{background:#6d5a7a}.wf .s7{background:#8a7a68}
+.tr-grid{display:grid;grid-template-columns:218px minmax(0,1fr);gap:16px;margin-top:14px;align-items:start}
+.tr-stages{border:1px solid var(--line);border-radius:var(--r2);overflow:hidden;background:var(--card)}
+.tr-stage{
+  display:grid;grid-template-columns:16px 1fr auto;gap:8px;align-items:center;
+  padding:8px 11px;border-bottom:1px solid var(--line2);width:100%;text-align:left;font-size:12.5px;
+}
+.tr-stage:last-child{border-bottom:0}
+.tr-stage:hover{background:#fff}
+.tr-stage.is-on{background:#fff;box-shadow:inset 2px 0 0 var(--zhu)}
+.tr-stage .n{font-size:10.5px;color:var(--ink4);font-variant-numeric:tabular-nums}
+.tr-stage .ms{font-size:11px;color:var(--ink3);font-variant-numeric:tabular-nums}
+.tr-stage.is-fail{color:var(--zhu)}
+.tr-stage.is-fail .n{background:var(--zhu);color:#fff;border-radius:2px;text-align:center;line-height:14px}
+.tr-stage .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.detail{border:1px solid var(--line);border-radius:var(--r2);background:var(--card);overflow:hidden}
+.detail .dh{
+  padding:10px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;
+  font-size:12.5px;font-weight:600;background:var(--card2);
+}
+.detail .dh .sp{flex:1}
+.detail .db{padding:14px}
+.io{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+.io > div{border:1px solid var(--line2);border-radius:var(--r);background:#fff;padding:9px 11px}
+.io .h{font-size:10.5px;color:var(--ink4);letter-spacing:.06em;margin-bottom:6px}
+.io pre{
+  margin:0;font-family:var(--font-ui);font-size:11.5px;line-height:1.8;color:var(--ink2);
+  white-space:pre-wrap;word-break:break-all;font-variant-numeric:tabular-nums;
+}
+table.mini{width:100%;border-collapse:collapse;font-size:12px}
+table.mini th{text-align:left;font-weight:400;color:var(--ink3);font-size:11px;padding:6px 8px;border-bottom:1px solid var(--line);background:var(--card2)}
+table.mini td{padding:7px 8px;border-bottom:1px solid var(--line2);color:var(--ink2);vertical-align:top}
+table.mini tr:last-child td{border-bottom:0}
+table.mini td.r{text-align:right;font-variant-numeric:tabular-nums}
+.verdict{display:inline-flex;align-items:center;gap:5px;font-size:11.5px}
+.verdict.no{color:var(--zhu)}
+.verdict.ok{color:var(--cang)}
+.chunks{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chunk{
+  font-size:11px;color:var(--ink2);border:1px solid var(--line);border-radius:2px;
+  padding:2px 6px;background:#fff;font-variant-numeric:tabular-nums;
+}
+.chunk b{font-weight:500;color:var(--ink)}
+.chunk.low{color:var(--ink4);border-style:dashed}
+.cmp{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px}
+.cmp-col{border:1px solid var(--line);border-radius:var(--r2);background:var(--card);overflow:hidden}
+.cmp-col .ch{padding:8px 12px;background:var(--card2);border-bottom:1px solid var(--line);font-size:11.5px;color:var(--ink2);display:flex;justify-content:space-between}
+.cmp-col .cb{padding:11px 12px;font-size:12px;color:var(--ink2)}
+.diff-hi{background:var(--shao-soft);box-shadow:inset 2px 0 0 var(--shao);padding-left:6px}
+
+/* ============ 11. spec page ============ */
+.spec{max-width:1000px;margin:0 auto;padding:26px 28px 80px}
+.spec h1{font-size:26px;font-weight:600;letter-spacing:.01em;line-height:1.4}
+.spec .lede{font-size:14px;line-height:1.95;color:var(--ink2);margin:12px 0 0;max-width:62ch}
+.spec h2{
+  font-size:16px;font-weight:600;margin:40px 0 12px;padding-top:18px;border-top:1px solid var(--line);
+  display:flex;align-items:baseline;gap:10px;
+}
+.spec h2 .no{font-size:12px;color:var(--zhu);font-variant-numeric:tabular-nums;letter-spacing:.04em}
+.spec h3{font-size:13px;font-weight:600;margin:20px 0 8px;color:var(--ink)}
+.spec p{font-size:13px;line-height:1.9;color:var(--ink2);margin-bottom:8px;max-width:68ch}
+.spec ul{margin:0 0 10px;padding-left:18px}
+.spec li{font-size:13px;line-height:1.9;color:var(--ink2);margin-bottom:3px}
+.spec table{width:100%;border-collapse:collapse;font-size:12.5px;margin:6px 0 14px;background:var(--card)}
+.spec th{text-align:left;font-weight:400;font-size:11px;color:var(--ink3);padding:8px 10px;border-bottom:1px solid var(--line);background:var(--card2);letter-spacing:.04em}
+.spec td{padding:9px 10px;border-bottom:1px solid var(--line2);vertical-align:top;line-height:1.75;color:var(--ink2)}
+.spec td b{font-weight:500;color:var(--ink)}
+.spec td code{font-size:11.5px;background:var(--card3);padding:0 4px;border-radius:2px;color:var(--ink)}
+.swatches{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin:10px 0 16px}
+.sw{border:1px solid var(--line);border-radius:var(--r2);overflow:hidden;background:var(--card)}
+.sw .c{height:44px}
+.sw .l{padding:7px 9px;font-size:11.5px;line-height:1.6}
+.sw .l b{display:block;font-weight:500;font-size:12px}
+.sw .l span{color:var(--ink4);font-variant-numeric:tabular-nums}
+.state-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}
+.state-cell{border:1px solid var(--line);border-radius:var(--r2);background:var(--card);padding:11px 12px}
+.state-cell .sh{font-size:10.5px;color:var(--ink4);letter-spacing:.06em;margin-bottom:9px}
+.wire{
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;line-height:1.65;
+  background:var(--card);border:1px solid var(--line);border-radius:var(--r2);padding:13px 15px;
+  overflow:auto;color:var(--ink2);white-space:pre;margin:8px 0 14px;
+}
+.mini{border:1px solid var(--line);border-radius:var(--r2);background:var(--card);padding:9px;margin:10px 0 8px}
+.mini-top{height:22px;border:1px dashed var(--line);border-radius:2px;background:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 7px;font-size:10px;color:var(--ink4);margin-bottom:5px}
+.mini-row{display:flex;gap:4px;height:132px}
+.mini-cell{border:1px dashed var(--line);border-radius:2px;background:#fff;padding:6px 7px;font-size:10.5px;line-height:1.55;color:var(--ink3);overflow:hidden}
+.mini-cell b{display:block;font-weight:500;color:var(--ink2);font-size:10.5px;margin-bottom:3px}
+.mini-cell.is-core{border-style:solid;border-color:#bfd1c8;background:#fbfcfa;color:var(--ink2);flex:1}
+.mini-cell.is-zhu{border-color:var(--zhu-line);background:#fdf8f6}
+.mini-gut{flex:0 0 26px;border-right:1px solid var(--line2);padding:6px 0;color:var(--zhu);font-size:9px;text-align:center}
+.mini-legend{font-size:10.5px;color:var(--ink4);margin:2px 0 16px;display:flex;gap:14px;flex-wrap:wrap}
+.mini-legend em{font-style:normal;color:var(--ink3)}
+.tagline{
+  display:inline-block;font-size:11px;color:var(--zhu);border:1px solid var(--zhu-line);
+  background:var(--zhu-soft);padding:1px 6px;border-radius:2px;margin-bottom:10px;letter-spacing:.04em;
+}
+.flowmap{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;margin:10px 0}.fm{border:1px solid var(--line);border-radius:var(--r);background:var(--card);padding:9px 10px;font-size:12px}
+.fm b{display:block;font-weight:500;margin-bottom:3px}
+.fm span{font-size:11px;color:var(--ink3);line-height:1.6;display:block}
+.fm.is-core{border-color:var(--zhu-line);background:#fdf8f6}
+.fm.is-core b{color:var(--zhu)}
+
+/* ============ 12. login ============ */
+.login{min-height:100vh;display:grid;grid-template-columns:1.15fr .85fr;background:var(--paper)}
+.login-l{padding:48px 56px;display:flex;flex-direction:column;border-right:1px solid var(--line);position:relative;overflow:hidden}
+.login-r{display:flex;align-items:center;justify-content:center;padding:40px 32px;background:var(--card)}
+.lg-brand{display:flex;align-items:center;gap:10px}
+.lg-brand .nm{font-size:17px;font-weight:600;letter-spacing:.08em}
+.lg-brand .sb{font-size:11.5px;color:var(--ink3);padding-left:10px;border-left:1px solid var(--line);letter-spacing:.04em}
+.lg-quote{margin:auto 0;max-width:560px}
+.lg-quote .meta{font-size:11.5px;color:var(--ink3);letter-spacing:.04em;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.lg-quote .meta .bar{width:22px;height:1px;background:var(--zhu)}
+.lg-quote blockquote{
+  font-family:var(--font-src);font-size:26px;line-height:2;color:var(--ink);text-align:justify;
+  letter-spacing:.01em;position:relative;padding-left:44px;
+}
+.lg-quote blockquote .m{
+  position:absolute;left:0;top:6px;color:var(--zhu);font-family:var(--font-ui);font-size:11px;
+  border:1px solid var(--zhu-line);background:var(--zhu-soft);width:18px;height:18px;
+  display:flex;align-items:center;justify-content:center;border-radius:2px;
+}
+.lg-quote .src{
+  margin-top:20px;padding-left:44px;font-size:12px;color:var(--ink3);display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+}
+.lg-quote .src .v{color:var(--zhu);border-bottom:1px solid var(--zhu-line)}
+.lg-foot{display:flex;gap:18px;font-size:11px;color:var(--ink4);margin-top:auto;padding-top:32px;flex-wrap:wrap}
+.lg-foot span{display:flex;align-items:center;gap:5px}
+.form{width:100%;max-width:352px}
+.form h1{font-size:21px;font-weight:600;margin-bottom:6px}
+.form .sub{font-size:12.5px;color:var(--ink3);margin-bottom:22px;line-height:1.7}
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--line);margin-bottom:20px}
+.tabs button{font-size:13px;color:var(--ink3);padding:0 12px 9px;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--zhu);font-weight:500}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:12px;color:var(--ink2);margin-bottom:5px}
+.field .inp{
+  display:flex;align-items:center;border:1px solid var(--line);border-radius:var(--r);
+  background:#fff;height:36px;padding:0 11px;transition:.14s;
+}
+.field .inp:focus-within{border-color:#8fa79d;box-shadow:0 0 0 3px rgba(47,79,74,.08)}
+.field .inp input{border:0;outline:none;background:none;font:inherit;font-size:13.5px;width:100%;color:var(--ink)}
+.field .inp input::placeholder{color:var(--ink4)}
+.field .hint{font-size:11px;color:var(--ink4);margin-top:5px;line-height:1.6}
+.field.is-error .inp{border-color:var(--zhu);background:#fdf8f6}
+.field.is-error .hint{color:var(--zhu)}
+.form .btn--primary{width:100%;height:38px;margin-top:6px;font-size:14px}
+.demo-row{display:flex;gap:8px;margin-top:16px;padding-top:14px;border-top:1px dashed var(--zhu-line)}
+.demo-row .btn{flex:1;font-size:12px;height:31px;border-style:dashed}
+.disclaim-sm{font-size:10.5px;color:var(--ink4);line-height:1.7;margin-top:16px}
+
+/* ============ 13. modal / toast / annot ============ */
+.modal{
+  position:fixed;inset:0;z-index:80;display:none;align-items:center;justify-content:center;
+  background:rgba(22,26,24,.34);padding:20px;
+}
+.modal.is-open{display:flex}
+.modal-box{
+  background:var(--card);border:1px solid var(--line);border-radius:var(--r2);
+  box-shadow:var(--sh);width:100%;max-width:520px;max-height:88vh;display:flex;flex-direction:column;
+  animation:pop .18s ease-out;
+}
+@keyframes pop{from{transform:translateY(6px);opacity:.7}to{transform:none;opacity:1}}
+.modal-hd{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
+.modal-hd .t{font-size:14px;font-weight:600}
+.modal-hd .sp{flex:1}
+.modal-bd{padding:16px 18px;overflow:auto}
+.modal-ft{padding:12px 18px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end;align-items:center}
+.modal-ft .sp{flex:1}
+.modal-ft .note{font-size:11px;color:var(--ink3)}
+.check{display:flex;gap:9px;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--line2);cursor:pointer}
+.check:last-of-type{border-bottom:0}
+.check input{margin:2px 0 0;accent-color:var(--zhu);width:14px;height:14px;flex:none}
+.check span{font-size:13px;line-height:1.7;color:var(--ink2)}
+.drop{
+  border:1px dashed #bfc7ba;border-radius:var(--r2);background:#fff;padding:26px;text-align:center;
+  color:var(--ink3);font-size:12.5px;line-height:1.8;
+}
+.drop:hover{border-color:var(--qing);background:#fcfdfb}
+#toast{
+  position:fixed;left:50%;bottom:28px;transform:translate(-50%,14px);z-index:120;
+  background:var(--ink);color:#f2f5f1;font-size:12.5px;padding:9px 14px;border-radius:var(--r);
+  box-shadow:0 12px 30px -14px rgba(0,0,0,.5);opacity:0;pointer-events:none;
+  transition:opacity .2s,transform .2s;max-width:80vw;
+}
+#toast.is-on{opacity:1;transform:translate(-50%,0)}
+
+body.annot [data-annot]{outline:1px dashed rgba(166,43,32,.55);outline-offset:-1px;position:relative}
+body.annot [data-annot]::after{
+  content:attr(data-annot);position:absolute;top:3px;right:3px;z-index:9;
+  background:var(--zhu);color:#fff;font-size:10px;line-height:14px;padding:0 4px;
+  border-radius:2px;white-space:nowrap;letter-spacing:.02em;font-family:var(--font-ui);
+  pointer-events:none;max-width:88%;overflow:hidden;text-overflow:ellipsis;
+}
+
+/* ============ 14. responsive ============ */
+@media (max-width:1340px){
+  :root{--ev:308px;--sess:236px}
+  .thread-inner{padding:22px 22px 10px}
+}
+@media (max-width:1180px){
+  /* 取证栏转为浮层 */
+  .chat{grid-template-columns:var(--sess) minmax(0,1fr)}
+  .evidence{
+    position:absolute;top:0;right:0;bottom:0;width:360px;z-index:40;
+    box-shadow:-18px 0 40px -22px rgba(22,26,24,.35);transform:translateX(101%);
+    transition:transform .22s ease;
+  }
+  body.ev-open .evidence{transform:none}
+  .thread-wrap{position:relative}
+}
+@media (max-width:980px){
+  :root{--sess:224px}
+  .brand-sub{display:none}
+  .polish{grid-template-columns:minmax(0,1fr)}
+  .p-drawer{display:none}
+  .rep{grid-template-columns:1fr;grid-template-rows:auto 1fr}
+  .rep-side{border-right:0;border-bottom:1px solid var(--line);max-height:230px;flex-direction:row;overflow-x:auto;align-items:stretch;padding-bottom:8px}
+  .rep-side .sh{display:none}
+  .tpl{width:200px;flex:none;margin:8px 0 0 12px}
+  .tr-grid{grid-template-columns:1fr}
+  .io{grid-template-columns:1fr}
+  .cmp{grid-template-columns:1fr}
+  .login{grid-template-columns:1fr}
+  .login-l{display:none}
+  .login-r{min-height:100vh;padding:32px 22px}
+  .page-hd{padding:16px 18px 12px}
+  .page-body{padding:14px 18px 40px}
+}
+@media (max-width:720px){
+  :root{--rail:0px}
+  body{font-size:13.5px}
+  #shell{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) 54px;height:calc(100vh - 50px)}
+  #rail{
+    grid-row:2;grid-column:1;
+    flex-direction:row;border-right:0;border-top:1px solid var(--line);
+    padding:0 4px;gap:0;height:54px;overflow-x:auto;
+  }
+  #main{grid-row:1;grid-column:1}
+  .rail-brand{display:none}
+  .rail-items{flex-direction:row;flex:1;gap:0}
+  .rail-item{flex:1;min-width:56px;padding:5px 0 4px;font-size:10px;border-radius:0}
+  .rail-item[aria-current="page"]::before{left:50%;top:0;bottom:auto;width:16px;height:2px;transform:translateX(-50%)}
+  .rail-annot{display:none!important}
+  .chat{grid-template-columns:1fr}
+  .sessions{display:none}
+  body.sess-open .sessions{
+    display:flex;position:absolute;inset:0 auto 0 0;width:260px;z-index:50;
+    box-shadow:18px 0 40px -22px rgba(22,26,24,.35);background:var(--card);
+  }
+  .thread-hd{padding:0 12px;gap:6px}
+  .thread-inner{padding:16px 15px 8px}
+  .answer{--gut:26px}
+  .claim{font-size:14.5px;line-height:1.95}
+  .claim.is-lead{font-size:16px}
+  .cite-no{min-width:15px;height:15px;font-size:10px;line-height:13px}
+  .conflict{grid-template-columns:1fr}
+  .conflict > div + div{border-left:0;border-top:1px solid var(--line)}
+  .composer{padding:8px 10px 10px}
+  .example-row{display:none}
+  .empty-chat{padding:4vh 16px 0}
+  .empty-chat h2{font-size:20px}
+  .evidence{width:100%}
+  .seg-row{grid-template-columns:1fr}
+  .seg-cell + .seg-cell{border-left:0;border-top:1px solid var(--line2)}
+  .page-hd .t{font-size:18px}
+  .topbar{gap:8px;padding:0 10px}
+  #topbar{height:50px}
+  .brand-name{font-size:15px}
+  .role-switch .lab{display:none}
+  .tb-annot span{display:none}
+  /* 表格转卡片 */
+  table.tbl thead{display:none}
+  table.tbl tr{display:block;border-bottom:1px solid var(--line);padding:4px 0}
+  table.tbl td{display:flex;justify-content:space-between;gap:14px;border:0;padding:4px 12px;text-align:left}
+  table.tbl td::before{content:attr(data-l);font-size:11px;color:var(--ink4);flex:none;padding-top:2px}
+  table.tbl td .acts{justify-content:flex-start}
+  table.tbl .r{text-align:left}
+  .rep-body{padding:14px 12px 40px}
+  .rep-doc{padding:20px 18px}
+  .spec{padding:18px 16px 60px}
+}
+
+/* ============ 15. a11y ============ */
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+}
+.sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.skip{
+  position:absolute;left:-9999px;top:0;z-index:200;background:var(--ink);color:#fff;
+  padding:8px 12px;font-size:12px;border-radius:0 0 2px 0;
+}
+.skip:focus{left:0}
+</style>
+</head>
+<body data-view="login" data-role="admin" data-preview="0">
+
+<!-- ============ topbar ============ -->
+<header id="topbar" data-annot="顶栏">
+  <a class="brand" href="#/chat">
+    <span class="seal" aria-hidden="true">志</span>
+    <span class="brand-name">问志</span>
+    <span class="brand-sub">县域方志智能问答</span>
+  </a>
+  <div class="region-pick" data-annot="县选择器">
+    <button class="region-btn" data-act="region-menu" aria-expanded="false">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 21s7-6.1 7-11a7 7 0 1 0-14 0c0 4.9 7 11 7 11Z"/><circle cx="12" cy="10" r="2.4"/></svg>
+      <span id="region-name">扶风县</span>
+      <span class="era" id="region-era">据清乾隆本</span>
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+    <div class="region-menu" id="region-menu" role="menu">
+      <div class="region-menu-hd">已发布语料覆盖的县</div>
+      <button class="region-opt" role="menuitem" data-region="扶风县|据清乾隆本|32 卷 · 1,284 段"><span class="n">扶风县</span><span class="c">已发布 1 · 待校对 1</span></button>
+      <button class="region-opt" role="menuitem" data-region="眉县|暂无语料|1 部解析中"><span class="n">眉县</span><span class="c">1 部解析中 · 不可检索</span></button>
+      <button class="region-opt" role="menuitem" data-region="岐山县|暂无语料|0 段"><span class="n">岐山县</span><span class="c">解析失败 · 不可检索</span></button>
+      <div class="region-menu-hd" style="border-top:1px solid var(--line2);margin-top:4px">切换县后，若新区无已发布语料，Agent 会直接说明而不会串县检索</div>
+    </div>
+  </div>
+  <div class="tb-spacer"></div>
+  <button class="tb-btn tb-annot" data-act="annot" aria-pressed="false" title="在页面上叠加结构与交互标注">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 4h7M4 4v7M20 20h-7M20 20v-7"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
+    <span>标注</span>
+  </button>
+  <div class="role-switch" title="原型演示用开关，非产品功能">
+    <span class="lab">原型角色</span>
+    <button data-role-set="admin" aria-pressed="true">管理员</button>
+    <button data-role-set="user" aria-pressed="false">登录用户</button>
+  </div>
+  <div class="avatar" id="avatar" title="当前账号">管</div>
+</header>
+
+<!-- ============ shell ============ -->
+<div id="shell">
+  <nav id="rail" aria-label="主导航" data-annot="导航">
+    <a class="rail-brand" href="#/chat" aria-label="问志"><span class="seal" aria-hidden="true">志</span></a>
+    <div class="rail-items">
+      <a class="rail-item" href="#/chat" data-nav="chat" aria-current="page">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 12a8 8 0 0 1-8 8H7l-4 3V12a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8Z"/></svg>
+        <span>对话</span>
+      </a>
+      <a class="rail-item" href="#/reports" data-nav="reports">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 3h9l4 4v14H6z"/><path d="M9 12h7M9 16h5M9 8h3"/></svg>
+        <span>报告</span>
+      </a>
+      <a class="rail-item" href="#/corpus" data-nav="corpus" data-admin>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m12 3 8 4-8 4-8-4 8-4Z"/><path d="m4 12 8 4 8-4M4 17l8 4 8-4"/></svg>
+        <span>语料</span>
+      </a>
+      <a class="rail-item" href="#/polish" data-nav="polish" data-admin>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 20c2-1 3-1 4-3l8-8 3 3-8 8c-2 1-2 2-3 4Z"/><path d="m14 6 3-3 4 4-3 3"/></svg>
+        <span>润色</span>
+      </a>
+      <a class="rail-item" href="#/trace" data-nav="trace" data-admin>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="6" cy="6" r="2.2"/><circle cx="18" cy="12" r="2.2"/><circle cx="6" cy="18" r="2.2"/><path d="M8.2 6H13a3 3 0 0 1 3 3v1M8.2 18H13a3 3 0 0 0 3-3v-1"/></svg>
+        <span>轨迹</span>
+        <i class="neo" aria-hidden="true"></i>
+      </a>
+    </div>
+    <div class="rail-ft">
+      <a class="rail-item" href="#/spec" data-nav="spec">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="8.4"/><path d="M12 11v5.5M12 7.6v.9"/></svg>
+        <span>说明</span>
+      </a>
+    </div>
+  </nav>
+
+  <main id="main">
+    <!-- ===== 对话 ===== -->
+    <section class="view is-on" data-view="chat">
+      <div class="chat" id="chat-grid">
+        <aside class="sessions" data-annot="会话栏·按时间分组">
+          <div class="sess-hd">
+            <span class="t">会话</span>
+            <button class="btn btn--sm btn--ghost" data-act="new-session" title="新建会话">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+            </button>
+          </div>
+          <div class="sess-list">
+            <div class="sess-group">今天</div>
+            <button class="sess is-active" data-sess="0">
+              <span class="q">本县有哪些古建筑</span>
+              <span class="m"><span>5 轮</span><span>·</span><span>14:22</span></span>
+            </button>
+            <button class="sess" data-sess="1">
+              <span class="q">清代本县出过哪些进士</span>
+              <span class="m"><span>3 轮</span><span>·</span><span>11:05</span></span>
+            </button>
+            <button class="sess" data-sess="2">
+              <span class="q">民国时期的县界与现在是否一致</span>
+              <span class="m"><span>8 轮</span><span>·</span><span>09:41</span></span>
+            </button>
+            <div class="sess-group">昨天</div>
+            <button class="sess" data-sess="3">
+              <span class="q">法门寺塔始建年代的两说</span>
+              <span class="m"><span>6 轮</span><span>·</span><span>18:30</span></span>
+            </button>
+            <button class="sess" data-sess="4">
+              <span class="q">帮我看看还没发布的卷七写了什么</span>
+              <span class="m"><span class="badge badge--refuse" style="height:16px;font-size:10px">已拒绝</span><span>·</span><span>16:12</span></span>
+            </button>
+            <div class="sess-group">更早</div>
+            <button class="sess" data-sess="5">
+              <span class="q">县志里的"祥异"类记载了什么</span>
+              <span class="m"><span>4 轮</span><span>·</span><span>10-26</span></span>
+            </button>
+            <button class="sess" data-sess="6">
+              <span class="q">明代赋役数额与邻近县对比</span>
+              <span class="m"><span>2 轮</span><span>·</span><span>10-25</span></span>
+            </button>
+          </div>
+          <div class="sess-ft">本会话第 5 轮 · 上下文已用 34%<br>超出预算时先压缩最早轮次，不报错</div>
+        </aside>
+
+        <div class="thread-wrap">
+          <div class="preview-bar" data-annot="预览模式·含未发布语料">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="2.6"/></svg>
+            预览模式：本次检索包含「待校对」语料（扶风县志·民国铅印本），回答不代表正式口径
+            <span style="flex:1"></span>
+            <button class="btn btn--sm" data-act="preview-off">退出预览</button>
+          </div>
+          <div class="thread-hd" data-annot="会话头·县／口径／取证">
+            <button class="btn btn--sm btn--ghost" data-act="sess-toggle" aria-label="展开会话列表" style="display:none" id="sess-btn">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+            </button>
+            <span class="ttl" id="thread-title">本县有哪些古建筑</span>
+            <span class="sep"></span>
+            <span class="badge badge--fact" id="thread-mode-badge"><i></i>问答</span>
+            <span style="flex:1"></span>
+            <button class="btn btn--sm btn--ghost" data-act="preview-on" data-admin title="检索范围加入待校对语料">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="2.6"/></svg>
+              <span>预览</span>
+            </button>
+            <button class="btn btn--sm btn--ghost" data-act="ev-toggle" title="取证栏">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M14 4v16"/></svg>
+              <span>取证</span>
+            </button>
+          </div>
+          <div class="thread" id="thread" data-annot="断言＋页边编号＋引用卡">
+            <div class="thread-inner" id="thread-inner"><!-- messages injected --></div>
+          </div>
+          <div class="composer" data-annot="输入区·示例与发送">
+            <div class="composer-in">
+              <div class="example-row" id="example-row"></div>
+              <div class="box">
+                <label class="sr" for="ta">输入问题</label>
+                <textarea id="ta" rows="1" placeholder="问一句县志里的事，比如「清代本县出过哪些进士」"></textarea>
+                <div class="box-ft">
+                  <div class="mode-tg" role="group" aria-label="回答形态">
+                    <button data-mode="answer" aria-pressed="true">白话解读</button>
+                    <button data-mode="original" aria-pressed="false">仅原文</button>
+                  </div>
+                  <span class="hint"><span class="kbd">Enter</span> 发送 · <span class="kbd">Shift</span>+<span class="kbd">Enter</span> 换行</span>
+                  <span class="sp"></span>
+                  <span class="hint num" id="ta-count">0 / 2000</span>
+                  <button class="send" data-act="send" id="send-btn">
+                    发送
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
+                  </button>
+                </div>
+              </div>
+              <div class="disclaim">回答只取自「已发布」县志；原型内引文与人名为排版示例，非真实史料</div>
+            </div>
+          </div>
+        </div>
+
+        <aside class="evidence" id="evidence" data-annot="取证栏·常驻非弹层">
+          <div class="ev-hd">
+            <span class="t">取证</span>
+            <span class="badge" style="height:19px;font-size:10.5px" id="ev-count">0 条引用</span>
+            <span class="sp"></span>
+            <button class="btn btn--sm btn--ghost btn--icon" data-act="ev-close" aria-label="收起取证栏">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m6 6 12 12M18 6 6 18"/></svg>
+            </button>
+          </div>
+          <div class="ev-tabs" id="ev-tabs" role="tablist"></div>
+          <div class="ev-body" id="ev-body">
+            <div class="ev-empty">
+              <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H19v16H6.5A2.5 2.5 0 0 0 4 21.5Z"/><path d="M8 8h7M8 12h7"/></svg>
+              <p>点回答左侧的朱色编号，<br>这里会显示该条引用的原文与上下文。</p>
+              <p style="margin-top:14px;color:var(--ink4);font-size:11.5px">每条事实性断言都必须有编号；<br>没有编号的句子，说明它没有出处。</p>
+            </div>
+          </div>
+          <div class="ev-foot">引文为原型排版示例 · 定位到 chunk 与段落区间</div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ===== 语料管理 ===== -->
+    <section class="view" data-view="corpus">
+      <div class="page">
+        <div class="page-hd" data-annot="页面头">
+          <div>
+            <div class="t">语料管理</div>
+            <div class="d">仅管理员可见 · 共 6 部 · 已发布 1 部 · 待处理 4 部</div>
+          </div>
+          <div class="sp"></div>
+          <button class="btn" data-act="upload-open">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+            上传县志
+          </button>
+        </div>
+        <div class="page-body">
+          <div class="toolbar" data-annot="筛选">
+            <button class="chip chip--on" data-filter="all">全部 6</button>
+            <button class="chip" data-filter="pub">已发布 1</button>
+            <button class="chip" data-filter="proof">待校对 1</button>
+            <button class="chip" data-filter="parsing">解析中 1</button>
+            <button class="chip" data-filter="failed">解析失败 1</button>
+            <button class="chip" data-filter="draft">草稿 1</button>
+            <button class="chip" data-filter="off">已下线 1</button>
+            <div class="sp"></div>
+            <label class="search">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+              <input type="search" placeholder="搜书名、县名、版本" id="corpus-search">
+            </label>
+          </div>
+          <div class="tblwrap">
+            <table class="tbl" id="corpus-tbl">
+              <thead>
+                <tr>
+                  <th style="width:30%">志书</th>
+                  <th>县</th><th>年代版本</th><th class="r">规模</th><th>状态</th><th class="r">更新时间</th><th class="r">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr data-state="pub">
+                  <td data-l="志书"><div class="nm">扶风县志（清乾隆本）</div><div class="sub">来源：陕西省图书馆影印 · 已填授权说明</div></td>
+                  <td data-l="县">扶风县</td>
+                  <td data-l="年代版本">清乾隆 <span class="sub">32 卷</span></td>
+                  <td data-l="规模" class="r num">1,284 段<div class="sub">0 页缺文本</div></td>
+                  <td data-l="状态"><span class="st st--pub"><i class="dot"></i>已发布</span></td>
+                  <td data-l="更新时间" class="r num">10-20</td>
+                  <td data-l="操作"><div class="acts"><button class="btn btn--sm" data-act="view-doc">查看</button><button class="btn btn--sm" data-act="offline">下线</button></div></td>
+                </tr>
+                <tr data-state="proof">
+                  <td data-l="志书"><div class="nm">扶风县志（民国铅印本）</div><div class="sub">来源：县档案馆 · 授权待补</div></td>
+                  <td data-l="县">扶风县</td>
+                  <td data-l="年代版本">民国二十三年 <span class="sub">18 卷</span></td>
+                  <td data-l="规模" class="r num">846 段<div class="sub">3 页缺文本</div></td>
+                  <td data-l="状态"><span class="st st--proof"><i class="dot"></i>待校对</span><div class="sub">已确认 41/58 段</div></td>
+                  <td data-l="更新时间" class="r num">10-29</td>
+                  <td data-l="操作"><div class="acts"><button class="btn btn--sm btn--primary" data-act="go-polish">润色</button><button class="btn btn--sm" data-act="publish">发布</button></div></td>
+                </tr>
+                <tr data-state="parsing">
+                  <td data-l="志书"><div class="nm">眉县志（清康熙本）</div><div class="sub">来源：个人收藏 · 已填授权说明</div></td>
+                  <td data-l="县">眉县</td>
+                  <td data-l="年代版本">清康熙 <span class="sub">6 卷</span></td>
+                  <td data-l="规模" class="r num">— <div class="sub"><span class="prog"><i style="width:62%"></i></span> 62%</div></td>
+                  <td data-l="状态"><span class="st st--parsing"><i class="dot"></i>解析中</span><div class="sub">提取 → 分段 → 向量化</div></td>
+                  <td data-l="更新时间" class="r num">10-29</td>
+                  <td data-l="操作"><div class="acts"><button class="btn btn--sm" data-act="cancel-task">取消</button></div></td>
+                </tr>
+                <tr data-state="failed">
+                  <td data-l="志书"><div class="nm">岐山县志（明万历本）</div><div class="sub">扫描件 · 27 页无文本层</div></td>
+                  <td data-l="县">岐山县</td>
+                  <td data-l="年代版本">明万历 <span class="sub">4 卷</span></td>
+                  <td data-l="规模" class="r num">— <div class="sub" style="color:var(--zhu)">118 页中 27 页缺文本</div></td>
+                  <td data-l="状态"><span class="st st--failed"><i class="dot"></i>解析失败</span><div class="sub">空页不允许当正常页入库</div></td>
+                  <td data-l="更新时间" class="r num">10-28</td>
+                  <td data-l="操作"><div class="acts"><button class="btn btn--sm" data-act="retry">重试</button><button class="btn btn--sm" data-act="fill">补录</button></div></td>
+                </tr>
+                <tr data-state="draft">
+                  <td data-l="志书"><div class="nm">扶风乡土志（稿本）</div><div class="sub">缺少：版本说明、授权说明</div></td>
+                  <td data-l="县">扶风县</td>
+                  <td data-l="年代版本">清末 <span class="sub">不分卷</span></td>
+                  <td data-l="规模" class="r num">—</td>
+                  <td data-l="状态"><span class="st st--draft"><i class="dot"></i>草稿</span><div class="sub">必填项未填齐</div></td>
+                  <td data-l="更新时间" class="r num">10-28</td>
+                  <td data-l="操作"><div class="acts"><button class="btn btn--sm" data-act="continue">继续填写</button></div></td>
+                </tr>
+                <tr data-state="off">
+                  <td data-l="志书"><div class="nm">眉县志（清乾隆本）</div><div class="sub">来源：影印本 · 已填授权说明</div></td>
+                  <td data-l="县">眉县</td>
+                  <td data-l="年代版本">清乾隆 <span class="sub">10 卷</span></td>
+                  <td data-l="规模" class="r num">640 段<div class="sub">0 页缺文本</div></td>
+                  <td data-l="状态"><span class="st st--off"><i class="dot"></i>已下线</span><div class="sub">重新发布需再走自查</div></td>
+                  <td data-l="更新时间" class="r num">10-22</td>
+                  <td data-l="操作"><div class="acts"><button class="btn btn--sm" data-act="publish">重新发布</button></div></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p style="font-size:11.5px;color:var(--ink4);margin-top:12px;line-height:1.8">
+            状态机 5 态：草稿 → 解析中 → 待校对 → 已发布 → 已下线。解析失败可从「解析中」回退重试；已发布版本不允许物理删除，只能下线。
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 润色工作台 ===== -->
+    <section class="view" data-view="polish">
+      <div class="polish" id="polish-grid">
+        <div class="polish-main">
+          <div class="p-bar" data-annot="进度＝发布前置条件">
+            <span class="doc">扶风县志（民国铅印本）</span>
+            <span class="ver">v3 · 润色稿</span>
+            <span class="badge badge--partial" style="height:19px;font-size:10.5px"><i></i>待校对</span>
+            <div class="p-prog">
+              <span class="bar"><i id="p-bar" style="width:50%"></i></span>
+              <span>已确认 <b class="num" id="p-done">3</b>/<b class="num" id="p-total">6</b> 段</span>
+            </div>
+            <span style="flex:1"></span>
+            <button class="btn btn--sm" data-act="p-drawer">依据与版本</button>
+            <button class="btn btn--sm" data-act="rollback">回滚到 v2</button>
+            <button class="btn btn--sm btn--zhu" data-act="publish" id="p-publish" disabled>发布</button>
+          </div>
+          <div class="p-list" id="p-list" data-annot="左原文只读／右润色稿">
+            <div class="p-note">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="flex:none"><circle cx="12" cy="12" r="8.5"/><path d="M12 8v5M12 16v.6"/></svg>
+              原型仅展示 6 段；完整文档 58 段。所有段落确认后才能发布。
+            </div>
+            <div class="diff-legend">
+              <span><i class="lg-ins"></i>新增：补标点、繁转简、还原分段</span>
+              <span><i class="lg-del"></i>删除</span>
+              <span><i class="lg-bad"></i>疑似越界：AI 补写了原文没有的内容</span>
+            </div>
+            <div id="seg-wrap"><!-- paragraphs injected --></div>
+          </div>
+        </div>
+        <aside class="p-drawer" id="p-drawer">
+          <div class="dh">本段依据</div>
+          <div class="db">
+            <div class="kv">
+              <b>模型</b><span>（配置项）· 润色任务</span>
+              <b>Prompt</b><span>polish_v3</span>
+              <b>生成时间</b><span class="num">10-29 14:02</span>
+              <b>本段改动</b><span>补标点 12 处 · 繁转简 38 字 · 分段 1 处</span>
+              <b>是否人工改</b><span>否</span>
+            </div>
+            <hr class="hair" style="margin:12px 0">
+            <div style="font-size:11.5px;color:var(--ink3);margin-bottom:8px;letter-spacing:.04em">需重点复核段落（4）</div>
+            <div class="sens-list">
+              <div class="sens"><i class="dot"></i><span>第 4 段 · 涉及灾异伤亡数额</span></div>
+              <div class="sens"><i class="dot"></i><span>第 11 段 · 涉及民族与宗教</span></div>
+              <div class="sens"><i class="dot"></i><span>第 27 段 · 涉及历史人物评价</span></div>
+              <div class="sens"><i class="dot"></i><span>第 46 段 · 涉及边疆建置</span></div>
+            </div>
+            <hr class="hair" style="margin:12px 0">
+            <div style="font-size:11.5px;color:var(--ink3);line-height:1.8">
+              润色只允许四类操作：补标点断句、繁转简、分段与标题还原、白话注释。改写史实、增删人名地名年份一律视为越界。
+            </div>
+          </div>
+          <div class="dr-foot">
+            <button class="btn btn--sm" data-act="batch">批量确认未修改段（2）</button>
+            <span style="font-size:10.5px;color:var(--ink4);line-height:1.6">仅对「AI 未改动或仅改标点」的段落可用</span>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ===== 报告中心 ===== -->
+    <section class="view" data-view="reports">
+      <div class="rep">
+        <aside class="rep-side" data-annot="模板与我的报告">
+          <div class="sh">选一个模板</div>
+          <button class="tpl is-on" data-tpl="沿革">
+            <span class="n">县域历史沿革</span>
+            <span class="m">5 章 · 预计 3,600 字 · 约 2 分钟</span>
+          </button>
+          <button class="tpl" data-tpl="概况">
+            <span class="n">县域概况</span>
+            <span class="m">4 章 · 预计 2,800 字 · 约 2 分钟</span>
+          </button>
+          <button class="tpl" data-tpl="人物">
+            <span class="n">人物小传</span>
+            <span class="m">3 章 · 预计 2,000 字 · 约 1 分钟</span>
+          </button>
+          <div class="sh" style="margin-top:8px;border-top:1px solid var(--line2);padding-top:14px">我的报告</div>
+          <div style="padding:0 12px 16px">
+            <button class="sess" style="padding:8px 4px">
+              <span class="q">扶风县历史沿革（10-28）</span>
+              <span class="m"><span>已导出 DOCX</span></span>
+            </button>
+            <button class="sess" style="padding:8px 4px">
+              <span class="q">眉县县域概况（10-25）</span>
+              <span class="m"><span style="color:var(--zhu)">1 节失败</span></span>
+            </button>
+          </div>
+        </aside>
+        <div class="rep-main">
+          <div class="page-hd">
+            <div>
+              <div class="t" id="rep-title">县域历史沿革</div>
+              <div class="d">扶风县 · 据清乾隆本 · 先确认大纲再成文</div>
+            </div>
+            <div class="sp"></div>
+            <button class="btn btn--sm" data-act="rep-reset">重来</button>
+          </div>
+          <div class="rep-body" id="rep-body">
+            <!-- stage 1: outline -->
+            <div id="rep-outline">
+              <div class="outline">
+                <div class="ol-hd">
+                  <span>大纲 · 5 章</span>
+                  <span class="badge" style="height:18px;font-size:10.5px">待确认</span>
+                  <span class="sp"></span>
+                  <button class="btn btn--sm btn--ghost" data-act="ol-add">+ 加一章</button>
+                </div>
+                <div id="ol-rows"></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;margin-top:14px;flex-wrap:wrap">
+                <button class="btn btn--primary" data-act="rep-generate">确认大纲并生成</button>
+                <span style="font-size:11.5px;color:var(--ink3)">生成期间可离开本页；某节失败不影响其他节</span>
+              </div>
+            </div>
+            <!-- stage 2/3 injected -->
+            <div id="rep-stage"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 轨迹 ===== -->
+    <section class="view" data-view="trace">
+      <div class="trace">
+        <div class="tr-hd" data-annot="版本三件套决定可复现">
+          <div class="l1">
+            <span class="badge badge--refuse"><i></i>拒答</span>
+            <span class="q">法门寺塔到底是东汉还是隋代建的？</span>
+            <span style="flex:1"></span>
+            <button class="btn btn--sm" data-act="tr-cmp">对比另一条</button>
+            <button class="btn btn--sm btn--primary" data-act="to-eval">转为评测样本</button>
+          </div>
+          <div class="l2">
+            <span><b>trace</b><span class="monoish">tr_20261029_7f3a91</span></span>
+            <span><b>用户</b>u_1042（登录用户）</span>
+            <span><b>县</b>扶风县 · 610324</span>
+            <span><b>总耗时</b><span class="num">5.19s</span></span>
+            <span><b>模型</b>（配置项）</span>
+            <span><b>prompt</b>p_v3</span>
+            <span><b>index</b>idx_20261029</span>
+            <span><b>token</b><span class="num">3,120 / 486</span></span>
+          </div>
+        </div>
+        <div class="tr-body">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:11.5px;color:var(--ink3);letter-spacing:.04em">耗时分布</span>
+            <span style="font-size:11.5px;color:var(--ink4)">按阶段占比，点色块跳转详情</span>
+          </div>
+          <div class="wf" id="wf"></div>
+          <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:10.5px;color:var(--ink4)">
+            <span>检索 3.12s 占 60%</span><span>生成 1.86s 占 36%</span><span>判定 0.02s</span><span>校验 0.10s</span>
+          </div>
+          <div class="tr-grid">
+            <div class="tr-stages" id="tr-stages"></div>
+            <div>
+              <div class="detail" id="tr-detail"></div>
+              <div style="margin-top:16px">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">
+                  <span style="font-size:12px;font-weight:600">命中片段</span>
+                  <span style="font-size:11px;color:var(--ink4)">只给 chunk_id 与分数，不展开正文；正文须回原文核对</span>
+                </div>
+                <div class="chunks" id="tr-chunks"></div>
+              </div>
+            </div>
+          </div>
+          <div id="tr-cmp-wrap"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 说明 ===== -->
+    <section class="view" data-view="spec">
+      <div class="page-body" style="padding:0;height:100%">
+        <div class="spec" id="spec-body"><!-- spec injected --></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- ============ login ============ -->
+<div id="login" class="login">
+  <div class="login-l">
+    <div class="lg-brand">
+      <span class="seal" aria-hidden="true">志</span>
+      <span class="nm">问志</span>
+      <span class="sb">县域方志智能问答</span>
+    </div>
+    <div class="lg-quote">
+      <div class="meta"><span class="bar"></span>原型首页的核心，就是产品里最重要的一件事</div>
+      <blockquote>
+        <span class="m">1</span>
+        志载：法门寺在县北二十里，始建于东汉，至明万历间重修，塔存而寺废。
+      </blockquote>
+      <div class="src">
+        <span>扶风县志 · <span class="v">卷二·建置</span></span>
+        <span>·</span>
+        <span>第 46 页 · 第 3 段</span>
+        <span>·</span>
+        <span style="color:var(--ink4)">引文为排版示例</span>
+      </div>
+    </div>
+    <div class="lg-foot">
+      <span>回答只取自已发布县志</span>
+      <span>每条断言附卷次与原文</span>
+      <span>内测邀请制</span>
+    </div>
+  </div>
+  <div class="login-r">
+    <div class="form">
+      <h1 id="form-title">登录</h1>
+      <p class="sub" id="form-sub">内测阶段仅限受邀用户。登录后可检索已发布的县志。</p>
+      <div class="tabs" role="tablist">
+        <button data-form="login" role="tab" aria-selected="true">登录</button>
+        <button data-form="reg" role="tab" aria-selected="false">用邀请码注册</button>
+      </div>
+      <div class="field">
+        <label for="u">用户名</label>
+        <div class="inp"><input id="u" autocomplete="username" placeholder="4–20 位，字母或数字"></div>
+      </div>
+      <div class="field" id="f-pwd">
+        <label for="p">密码</label>
+        <div class="inp"><input id="p" type="password" autocomplete="current-password" placeholder="8 位以上"></div>
+        <div class="hint" id="p-hint">管理员账号需 12 位以上</div>
+      </div>
+      <div class="field" id="f-code" style="display:none">
+        <label for="c">邀请码</label>
+        <div class="inp"><input id="c" placeholder="6 位邀请码"></div>
+        <div class="hint">邀请码由管理员在「用量与用户」页生成</div>
+      </div>
+      <button class="btn btn--primary" data-act="login">登录</button>
+      <div class="demo-row">
+        <button class="btn" data-demo="admin">以管理员进入</button>
+        <button class="btn" data-demo="user">以登录用户进入</button>
+      </div>
+      <p class="disclaim-sm">原型演示：两个按钮跳过校验直接进入，用于对比两种角色的界面差异。真实实现中角色只从令牌解析，不接受请求体声明。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ============ modals ============ -->
+<div class="modal" id="m-publish" role="dialog" aria-modal="true" aria-labelledby="m-pub-t">
+  <div class="modal-box">
+    <div class="modal-hd">
+      <span class="t" id="m-pub-t">发布前自查</span>
+      <span class="sp"></span>
+      <button class="btn btn--sm btn--ghost btn--icon" data-act="modal-close" aria-label="关闭">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m6 6 12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+    <div class="modal-bd">
+      <p style="font-size:12.5px;color:var(--ink3);line-height:1.8;margin-bottom:10px">
+        没有第二个人复核，这五项就是最后一道防线。全部勾选后才能发布。
+      </p>
+      <label class="check"><input type="checkbox" data-chk><span>已逐段确认润色内容，未发现史实改动</span></label>
+      <label class="check"><input type="checkbox" data-chk><span>已检查全部 4 处「需重点复核」段落</span></label>
+      <label class="check"><input type="checkbox" data-chk><span>已抽检 3 处原文与提取文本一致</span></label>
+      <label class="check"><input type="checkbox" data-chk><span>缺文本页已补录，或已确认可接受（本文件 3 页）</span></label>
+      <label class="check"><input type="checkbox" data-chk><span>来源与授权说明已填写</span></label>
+    </div>
+    <div class="modal-ft">
+      <span class="note" id="pub-note">还需勾选 5 项</span>
+      <span class="sp"></span>
+      <button class="btn" data-act="modal-close">取消</button>
+      <button class="btn btn--zhu" data-act="publish-confirm" disabled>确认发布</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="m-upload" role="dialog" aria-modal="true" aria-labelledby="m-up-t">
+  <div class="modal-box">
+    <div class="modal-hd">
+      <span class="t" id="m-up-t">上传县志</span>
+      <span class="sp"></span>
+      <button class="btn btn--sm btn--ghost btn--icon" data-act="modal-close" aria-label="关闭">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m6 6 12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+    <div class="modal-bd">
+      <div class="drop" data-act="fake-file" style="cursor:pointer">
+        <div style="font-size:13px;color:var(--ink);margin-bottom:4px">把 PDF、TXT 或 Markdown 拖到这里</div>
+        <div>单文件 ≤ 50MB · 扫描件会逐页标记缺文本</div>
+        <div style="margin-top:8px;color:var(--qing);font-size:12px">或点此选择文件</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px">
+        <div class="field" style="margin:0"><label>县名</label><div class="inp"><input value="扶风县" readonly></div></div>
+        <div class="field" style="margin:0"><label>志书名称 <span style="color:var(--zhu)">必填</span></label><div class="inp"><input id="up-name" placeholder="如：扶风县志"></div></div>
+        <div class="field" style="margin:0"><label>编纂年代 <span style="color:var(--zhu)">必填</span></label><div class="inp"><input id="up-era" placeholder="如：清乾隆三十二年"></div></div>
+        <div class="field" style="margin:0"><label>版本说明</label><div class="inp"><input placeholder="如：影印本 / 铅印本"></div></div>
+      </div>
+      <div class="field is-error" style="margin-top:10px">
+        <label>来源与授权说明</label>
+        <div class="inp"><input id="up-src" placeholder="写明来源与可用范围"></div>
+        <div class="hint">缺此项不允许提交：无授权来源的语料不得进入检索</div>
+      </div>
+      <p style="font-size:11.5px;color:var(--ink4);line-height:1.7;margin-top:6px">
+        提交后进入「解析中」，完成提取与分段后转为「待校对」。解析期间可关闭页面。
+      </p>
+    </div>
+    <div class="modal-ft">
+      <span class="note">扩展名白名单 + MIME 双校验 · 文件重命名存储</span>
+      <span class="sp"></span>
+      <button class="btn" data-act="modal-close">取消</button>
+      <button class="btn btn--primary" data-act="upload-submit" aria-disabled="true">开始解析</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="m-offline" role="dialog" aria-modal="true" aria-labelledby="m-off-t">
+  <div class="modal-box" style="max-width:440px">
+    <div class="modal-hd"><span class="t" id="m-off-t">下线语料</span><span class="sp"></span>
+      <button class="btn btn--sm btn--ghost btn--icon" data-act="modal-close" aria-label="关闭"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+    </div>
+    <div class="modal-bd">
+      <p style="font-size:13px;line-height:1.8;color:var(--ink2);margin-bottom:12px">
+        下线后，登录用户立即检索不到这部县志。已生成的回答与报告保留，但引用会标记为「已下线」。
+      </p>
+      <div class="field is-error" style="margin:0">
+        <label>输入书名以确认</label>
+        <div class="inp"><input id="off-name" placeholder="扶风县志（清乾隆本）"></div>
+        <div class="hint">这是不可撤销动作的二次确认</div>
+      </div>
+    </div>
+    <div class="modal-ft">
+      <span class="sp"></span>
+      <button class="btn" data-act="modal-close">取消</button>
+      <button class="btn btn--zhu" data-act="offline-confirm" disabled>确认下线</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<style>
+#login{display:grid}
+body:not([data-view="login"]) #login{display:none!important}
+@keyframes fi{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.fade-in{animation:fi .3s ease-out both}
+.seg-pol ins.bad{background:#f7e2dd;border-bottom-color:#d9a79f;color:#8a2f24}
+.empty-a{padding-left:42px;font-family:var(--font-ui);color:var(--ink3);font-size:13px}
+@media(max-width:720px){
+  #sess-btn{display:inline-flex!important}
+  .empty-a{padding-left:26px}
+  #topbar{gap:6px;padding:0 8px}
+  #topbar .brand{flex:none;gap:6px}
+  .brand-name{font-size:14px;white-space:nowrap}
+  .brand .seal{width:22px;height:22px;font-size:14px}
+  .region-pick{flex:none}
+  .region-btn{height:30px;padding:0 7px;gap:5px;font-size:12.5px;white-space:nowrap}
+  .region-btn .era{display:none}
+  .region-btn #region-name{max-width:54px;overflow:hidden;text-overflow:ellipsis}
+  .role-switch button{padding:0 7px;font-size:11px;white-space:nowrap}
+  .avatar{width:24px;height:24px;font-size:11px}
+  .chat{grid-template-columns:minmax(0,1fr)}
+  .rail-ft{display:contents}
+  .thread-hd .btn > span{display:none}
+  #thread-mode-badge{display:none}
+  .box-ft{gap:6px;padding:4px 8px 7px 10px}
+  .box-ft .hint{display:none}
+  .mode-tg button{padding:0 7px;font-size:11px}
+  .send{padding:0 10px}
+  .run-meta{gap:8px}
+  .answer .caveat,.answer .conflict{margin-left:0}
+}
+</style>
+
+<script>
+(function(){
+'use strict';
+var $=function(s,r){return (r||document).querySelector(s)};
+var $$=function(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s))};
+var sleep=function(ms){return new Promise(function(r){setTimeout(r,ms)})};
+var RM=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+var body=document.body;
+var S={role:'admin',view:'chat',cites:[]};
+
+/* ---------- 工具 ---------- */
+function now(){var d=new Date();return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2)}
+function toast(msg){var t=$('#toast');t.textContent=msg;t.classList.add('is-on');clearTimeout(t._t);t._t=setTimeout(function(){t.classList.remove('is-on')},2600)}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')}
+
+/* ---------- 路由 ---------- */
+var ADMIN_VIEWS=['corpus','polish','trace'];
+function go(v){
+  if(v==='login'){body.dataset.view='login';return}
+  if(S.role==='user'&&ADMIN_VIEWS.indexOf(v)>-1)v='chat';
+  S.view=v;body.dataset.view=v;
+  $$('.view').forEach(function(s){s.classList.toggle('is-on',s.dataset.view===v)});
+  $$('.rail-item[data-nav]').forEach(function(a){
+    if(a.dataset.nav===v)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');
+  });
+  if(v==='spec'&&!$('#spec-body').dataset.built)buildSpec();
+  try{if(location.hash!=='#/'+v)history.replaceState(null,'','#/'+v)}catch(err){}
+  body.classList.remove('ev-open','sess-open');
+}
+function setRole(r){
+  S.role=r;body.dataset.role=r;
+  $$('[data-role-set]').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.roleSet===r))});
+  $('#avatar').textContent=r==='admin'?'管':'陈';
+  $('#avatar').title=r==='admin'?'管理员 admin':'登录用户 user';
+  if(r==='user'&&ADMIN_VIEWS.indexOf(S.view)>-1)go('chat');
+  if(r==='user'&&S.preview){S.preview=false;body.dataset.preview='0'}
+}
+
+/* ---------- 顶栏 ---------- */
+document.addEventListener('click',function(e){
+  var t;
+  if((t=e.target.closest('[data-role-set]'))){setRole(t.dataset.roleSet);toast(S.role==='admin'?'已切换到管理员：导航多出语料、润色、轨迹':'已切换到登录用户：看不到管理入口，但接口层同样会拒绝越权');return}
+  if((t=e.target.closest('[data-act="annot"]'))){
+    var on=body.classList.toggle('annot');t.setAttribute('aria-pressed',String(on));
+    toast(on?'已开启标注：红框标出主要区域，标签说明该区域职责':'已关闭标注');return;
+  }
+  if((t=e.target.closest('[data-act="region-menu"]'))){$('#region-menu').classList.toggle('is-open');t.setAttribute('aria-expanded',String($('#region-menu').classList.contains('is-open')));return}
+  if((t=e.target.closest('.region-opt'))){
+    var p=t.dataset.region.split('|');
+    if(p[2].indexOf('0 段')>-1){toast('岐山县暂无已发布语料：Agent 会直接说明，不会串县检索')}
+    $('#region-name').textContent=p[0];$('#region-era').textContent=p[1];
+    $('#region-menu').classList.remove('is-open');
+    if(p[0]!=='扶风县'){toast('已切换到'+p[0]+'：该县无已发布语料，提问会直接返回「暂无可检索语料」')}
+    return;
+  }
+  if((t=e.target.closest('[data-nav]'))){e.preventDefault();go(t.dataset.nav);return}
+  if(!e.target.closest('.region-pick'))$('#region-menu').classList.remove('is-open');
+});
+
+/* ---------- 登录 ---------- */
+function enter(role){setRole(role);go('chat');toast(role==='admin'?'已进入 · 管理员视角':'已进入 · 登录用户视角')}
+$$('[data-demo]').forEach(function(b){b.addEventListener('click',function(){enter(b.dataset.demo)})});
+$$('[data-form]').forEach(function(b){b.addEventListener('click',function(){
+  var reg=b.dataset.form==='reg';
+  $$('[data-form]').forEach(function(x){x.setAttribute('aria-selected',String(x===b))});
+  $('#form-title').textContent=reg?'用邀请码注册':'登录';
+  $('#form-sub').textContent=reg?'邀请码由管理员发放，一码一人，用后失效。':'内测阶段仅限受邀用户。登录后可检索已发布的县志。';
+  $('#f-code').style.display=reg?'block':'none';
+  $('#f-pwd').querySelector('label').textContent=reg?'设置密码':'密码';
+})});
+document.addEventListener('click',function(e){
+  var t=e.target.closest('[data-act="login"]');
+  if(!t)return;
+  var u=$('#u');
+  if(!u.value.trim()){
+    $('#f-pwd').classList.add('is-error');
+    $('#p-hint').textContent='请输入用户名后再登录';
+    u.focus();toast('用户名不能为空');return;
+  }
+  enter(/admin/i.test(u.value)?'admin':'user');
+});
+
+/* ---------- 对话：示例与数据 ---------- */
+var C={
+  famen:{no:1,doc:'扶风县志',vol:'卷二·建置',chunk:'c_10231',page:'p.46',para:'第 3 段',ocr:false,
+    before:'城内外坊表凡九，今存其四。祠庙之属，附于建置。',
+    text:'法门寺在县北二十里，始建于东汉，至明万历间重修，塔存而寺废。',
+    after:'寺旧有田三十顷，今仅存八顷，隶于寺僧。',
+    supports:'第 1 句：三处记载的数量与方位',ctx:'……县北二十里为法门镇，镇因寺名。寺旧有田三十顷，今仅存八顷，隶于寺僧。塔十三级，砖构，万历间重修时易其檐角。'},
+  daming:{no:2,doc:'扶风县志',vol:'卷二·建置',chunk:'c_10244',page:'p.47',para:'第 1 段',ocr:false,
+    before:'祠庙。（寺观附）',text:'大明寺在县东十五里，元至正间建，明洪武、清康熙两次修葺。',
+    after:'今为僧舍，像设仅存其一。',supports:'第 2 句：始建与修葺年代',ctx:'……大明寺在县东十五里，元至正间建，明洪武、清康熙两次修葺。今为僧舍，像设仅存其一。'},
+  chenghuang:{no:3,doc:'扶风县志',vol:'卷三·祠祀',chunk:'c_10488',page:'p.63',para:'第 2 段',ocr:false,
+    before:'城隍之祀，通于郡邑。',text:'城隍庙在县治西，明洪武三年建，正统间重修，有记。',
+    after:'记见卷九·金石。',supports:'第 3 句：城隍庙的始建年代',ctx:'……城隍庙在县治西，明洪武三年建，正统间重修，有记。记见卷九·金石。'},
+  minglu:{no:4,doc:'扶风县志',vol:'卷二·建置',chunk:'c_10251',page:'p.48',para:'第 4 段',ocr:false,
+    before:'此外祠庙尚有数处，俱列其名。',text:'文庙在县治东南，关帝庙在县治西，二庙俱有记。',
+    after:'（按：未记始建年代与沿革。）',supports:'第 4 句：仅存名录的两处',ctx:'……文庙在县治东南，关帝庙在县治西，二庙俱有记。（按：未记始建年代与沿革。）'},
+  jinshi1:{no:1,doc:'扶风县志',vol:'卷七·选举',chunk:'c_20117',page:'p.142',para:'第 2 段',ocr:false,
+    before:'国朝进士。',text:'乾隆元年丙辰科：张念祖，授知县。',after:'乾隆十年乙丑科：李元标，授主事。',supports:'第 1 句：第 1、2 位进士',ctx:'……乾隆元年丙辰科：张念祖，授知县。乾隆十年乙丑科：李元标，授主事。乾隆二十六年辛巳科：王锡嘏，授教谕。'},
+  jinshi2:{no:2,doc:'扶风县志',vol:'卷七·选举',chunk:'c_20118',page:'p.142',para:'第 3 段',ocr:false,
+    before:'',text:'乾隆二十六年辛巳科：王锡嘏，授教谕。',after:'（按：以上三人，俱见科第表。）',supports:'第 1 句：第 3 位进士',ctx:'……乾隆二十六年辛巳科：王锡嘏，授教谕。（按：以上三人，俱见科第表。）'},
+  jinshi3:{no:3,doc:'扶风县志（民国铅印本）',vol:'卷五·选举',chunk:'c_30882',page:'p.96',para:'第 1 段',ocr:true,
+    before:'（民国本增补）',text:'张念祖，乾隆丙辰科进士，著有《西河杂记》四卷。',after:'（按：乾隆本无此条，为民国本增补。）',supports:'第 2 句：张念祖的著作',ctx:'……张念祖，乾隆丙辰科进士，著有《西河杂记》四卷。（按：乾隆本无此条，为民国本增补。）'},
+  jinshi4:{no:4,doc:'扶风县志',vol:'卷七·选举',chunk:'c_20121',page:'p.143',para:'第 1 段',ocr:false,
+    before:'（附）',text:'张念祖，仅存姓名，科年缺。',after:'',supports:'第 3 句：仅存姓名的一人',ctx:'（附）张念祖，仅存姓名，科年缺。'}
+};
+var NEARBY=[
+  {v:'卷六·田赋',t:'乾隆十年，额征民田二千一百顷，粮八千四百石。',s:'0.51'},
+  {v:'卷十二·物产',t:'县境多粟麦，岁输西安府仓。',s:'0.47'},
+  {v:'卷首·凡例',t:'志中纪事，断自乾隆三十二年。',s:'0.44'}
+];
+
+function scenFact(){return{
+  type:'fact',badge:'有据',badgeCls:'badge--fact',turn:0,
+  lead:{t:'志书里有明确记载的古建筑共 3 处：法门寺塔、大明寺、城隍庙；另有 2 处只有名录，没有沿革。',c:[1]},
+  notes:[
+    {t:'法门寺塔在县北二十里，志载始建于东汉，明万历年间重修，今塔存而寺废。',c:[2]},
+    {t:'大明寺在县东十五里，元至正年间建，明洪武、清康熙两次修葺。',c:[3]},
+    {t:'城隍庙在县治西，明洪武三年建，正统年间重修。',c:[4]},
+    {t:'文庙、关帝庙二处仅列其名，未记始建与沿革，<span class="q">回答不对这两处作任何推断。</span>',c:[5]}
+  ],
+  conflict:{a:{h:'卷二·建置',q:'……始建于东汉，至明万历间重修……',d:'东汉说'},b:{h:'卷九·金石',q:'……隋开皇中建塔，唐开元间重修……',d:'隋代说'}},
+  caveat:{title:'两说并存，未作判定',ps:['法门寺塔的始建年代，志书两处记载不一致，已并列呈现，不由 Agent 择一。','卷九所记出自碑记，碑文残缺约 40 字；年代字句可辨，上下文不全。']},
+  cites:[C.famen,C.daming,C.chenghuang,C.minglu],
+  followups:['这几处建筑在民国时期是否仍存？','志书里有没有法门寺塔的碑记全文？','明代那次重修是谁主持的？'],
+  meta:{hits:12,used:5,expand:'未触发',ms:'5.4s'}
+}}
+function scenPartial(){return{
+  type:'partial',badge:'部分有据',badgeCls:'badge--partial',turn:1,
+  banner:'名单完整，但第 3 位的科年、第 4 位的科年与仕履在现有语料中没有记载，已按「仅存姓名」处理。',
+  rewrite:'你问的是上一轮名单里的第 2 位 · 张念祖（乾隆丙辰科进士）',
+  lead:{t:'清代本县进士可考者 3 人：张念祖（乾隆元年）、李元标（乾隆十年）、王锡嘏（乾隆二十六年）。另 1 人仅存姓名。',c:[1,2]},
+  notes:[
+    {t:'张念祖，乾隆丙辰科，授知县。民国铅印本补记其著有《西河杂记》四卷，乾隆本无此条。',c:[3]},
+    {t:'另有「张念祖」一条仅存姓名、科年缺，与上条是否同一人，志书未作说明，<span class="q">此处不作合并判断。</span>',c:[4]}
+  ],
+  caveat:{title:'两本名单不一致',ps:['乾隆本列 3 人，民国铅印本增补 1 人且著作信息仅见于后者。','同名两条未合并：志书未说明是否同一人，Agent 不代为判断。']},
+  cites:[C.jinshi1,C.jinshi2,C.jinshi3,C.jinshi4],
+  followups:['《西河杂记》在别的卷里还有记载吗？','这三位有没有任官的后续记载？','民国本还增补了哪些内容？'],
+  meta:{hits:9,used:4,expand:'已扩检 1 次',ms:'6.1s'}
+}}
+function scenRefuseGdp(){return{
+  type:'refuse',badge:'未找到记载',badgeCls:'badge--refuse',turn:0,
+  plain:'现有县志资料中未找到相关记载。',
+  sub:'县志记事断自清乾隆三十二年，不含当代经济统计。这类数据不在本产品的语料范围内，也不做估算。',
+  nearby:NEARBY,
+  followups:['清代本县的田赋额是多少？','志书里怎么记本县的物产？','民国时期的人口有多少？'],
+  meta:{hits:0,used:0,expand:'已扩检 1 次',ms:'4.1s'}
+}}
+function scenPermission(){return{
+  type:'refuse',badge:'无权访问',badgeCls:'badge--refuse',turn:0,
+  plain:'该内容尚未发布，无法查看。',
+  sub:'本次回答没有检索任何未发布语料。若你有管理员账号，可以在「语料管理」里查看待校对文档；权限只从登录令牌解析，不因对话中的身份声明而改变。',
+  followups:['已发布的卷有哪些？','卷二·建置里记了什么？'],
+  meta:{hits:0,used:0,expand:'未触发',ms:'1.2s'}
+}}
+function scenWrite(){return{
+  type:'boundary',badge:'能力边界',badgeCls:'badge--boundary',turn:0,
+  plain:'这件事需要你在「语料管理」里做，我不能代你写入。',
+  sub:'我能检索、能引用、能组织回答，但没有修改语料的权限。上传、润色、发布都走独立的后台接口，每一步都会留痕。',
+  list:['我不会执行上传、润色、发布、删除','你可以先在润色工作台逐段确认，再发布','发布前会有一次自查清单，避免把改动过的史实放出去'],
+  cta:'去语料管理',followups:['润色能改哪些内容？','发布前要检查什么？'],
+  meta:{hits:0,used:0,expand:'未触发',ms:'0.4s'}
+}}
+function scenChat(){return{
+  type:'boundary',badge:'能力边界',badgeCls:'badge--boundary',turn:0,
+  plain:'我只答县志里的事。',
+  sub:'这个问题和县域方志无关，我不会去检索语料，也不会编一个答案给你。可以试试下面这几类问题：',
+  list:['某个建筑的始建年代与沿革','某类人物的名单与出处（进士、乡贤、列女）','某项制度或赋役数额的记载'],
+  followups:['本县有哪些古建筑？','清代本县出过哪些进士？','县志里的「祥异」类记载了什么？'],
+  meta:{hits:0,used:0,expand:'未触发',ms:'0.3s'}
+}}
+function scenRegion(name){return{
+  type:'refuse',badge:'暂无可检索语料',badgeCls:'badge--refuse',turn:0,
+  plain:'暂无可检索语料。',
+  sub:name+'目前没有已发布的县志：'+(name==='眉县'?'清康熙本还在解析、清乾隆本已下线。':'明万历本解析失败，27 页缺文本尚未补录。')+'Agent 不会跨县检索其它县的语料来凑一个答案。',
+  followups:['扶风县有哪些古建筑？','眉县有哪些已发布语料？'],
+  meta:{hits:0,used:0,expand:'未触发',ms:'0.2s'}
+}}
+function pick(t){
+  var rn=$('#region-name').textContent;
+  if(rn!=='扶风县')return scenRegion(rn);
+  var s=t.replace(/\s/g,'');
+  if(/卷七|未发布|还没发布|没发布/.test(s))return scenPermission();
+  if(/加进|写进|加到时|录入|帮我改/.test(s))return scenWrite();
+  if(/GDP|gdp|人口|面积|财政|产值/.test(s))return scenRefuseGdp();
+  if(/天气|吃饭|你好|在吗|讲个笑话/.test(s))return scenChat();
+  if(/第二个|第二位|其中|他|她|上面那/.test(s))return scenPartial();
+  if(/进士|科举|举人|人物/.test(s))return scenPartial();
+  return scenFact();
+}
+
+/* ---------- 对话渲染 ---------- */
+var threadInner=$('#thread-inner'),threadEl=$('#thread'),sentCount=4;
+function scrollBottom(){requestAnimationFrame(function(){threadEl.scrollTop=threadEl.scrollHeight})}
+function clearEmpty(){var e=$('.empty-chat',threadInner);if(e)e.remove()}
+function msgQ(text,scen){
+  clearEmpty();
+  var d=document.createElement('div');
+  d.className='msg msg-q';
+  d.innerHTML='<div class="msg-who">你 · '+now()+'<span class="ln"></span>'+$('#region-name').textContent+'</div>'+
+    '<div class="qtext">'+esc(text)+'</div>'+
+    '<div class="qmeta"><span>第 '+(sentCount+1)+' 轮</span>'+(scen.rewrite?'<span>已改写为独立问题</span>':'<span>单轮 · 未触发改写</span>')+'</div>';
+  threadInner.appendChild(d);sentCount++;scrollBottom();
+  $('#thread-title').textContent=text.length>22?text.slice(0,22)+'…':text;
+  return d;
+}
+function msgShell(){
+  var d=document.createElement('div');d.className='msg msg-a';
+  d.innerHTML='<div class="msg-who">问志<span class="badge badge--fact" style="margin-left:2px"><i></i>检索中</span><span class="ln"></span></div><div class="stages"></div><div class="ans-body"></div>';
+  threadInner.appendChild(d);scrollBottom();return d;
+}
+async function runStages(el,scen){
+  var steps=scen.turn>0?['改写问题','混合检索','充分性判定','生成回答']:['混合检索','充分性判定','生成回答'];
+  var box=$('.stages',el);
+  box.innerHTML=steps.map(function(s,i){return '<span class="stage" data-i="'+i+'"><i class="d"></i>'+s+'</span>'+(i<steps.length-1?'<span class="arw"></span>':'')}).join('');
+  var nodes=$$('.stage',box);
+  for(var i=0;i<nodes.length;i++){
+    nodes[i].classList.add('is-active');
+    await sleep(RM?30:420+i*70);
+    nodes[i].classList.remove('is-active');nodes[i].classList.add('is-done');
+  }
+}
+function runMetaHTML(scen){
+  return '<div class="run-meta"><span><b class="k">检索</b> '+scen.meta.hits+' 条</span><span><b class="k">采用</b> '+scen.meta.used+' 条</span><span><b class="k">扩检</b> '+scen.meta.expand+'</span><span><b class="k">耗时</b> '+scen.meta.ms+'</span><span style="flex:1"></span><button data-act="open-trace" data-admin>查看轨迹</button></div>';
+}
+function claimHTML(c){
+  var marks=c.c&&c.c.length?'<span class="mark">'+c.c.map(function(n){return '<button class="cite-no" data-cite="'+n+'" aria-label="查看引用 '+n+'">'+n+'</button>'}).join('')+'</span>':'';
+  return '<p class="claim">'+marks+c.t+'</p>';
+}
+function bodyHTML(scen){
+  if(scen.type==='fact'||scen.type==='partial'){
+    var h='';
+    if(scen.banner)h+='<div class="caveat" style="border-color:#e4d3b4;background:#fdf9f2"><div class="ch" style="color:var(--shao)">部分内容未找到依据</div><p>'+scen.banner+'</p></div>';
+    if(scen.rewrite)h+='<div class="hint-line" style="margin:0 0 12px;color:var(--qing)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="flex:none;margin-top:4px"><path d="M4 7h9a4 4 0 0 1 0 8H7"/><path d="m9 4 3 3-3 3"/><path d="M4 19h6"/></svg><span>指代解析：'+scen.rewrite+'</span></div>';
+    h+='<div class="answer">';
+    h+='<p class="claim is-lead">'+(scen.lead.c?'<span class="mark">'+scen.lead.c.map(function(n){return '<button class="cite-no" data-cite="'+n+'">'+n+'</button>'}).join('')+'</span>':'')+scen.lead.t+'</p>';
+    h+='<div class="answer-section"><div class="h">白话解读</div>'+scen.notes.map(claimHTML).join('')+'</div>';
+    if(scen.caveat){
+      h+='<div class="caveat" style="margin-top:16px"><div class="ch"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 2.6 20h18.8L12 3Z"/><path d="M12 9v5M12 17v.6"/></svg>'+scen.caveat.title+'</div>'+scen.caveat.ps.map(function(p){return '<p>'+p+'</p>'}).join('')+
+        (scen.conflict?'<div class="conflict"><div><div class="vh">'+scen.conflict.a.h+'</div><div class="vq">'+scen.conflict.a.q+'</div><div class="vd">'+scen.conflict.a.d+'</div></div><div><div class="vh">'+scen.conflict.b.h+'</div><div class="vq">'+scen.conflict.b.q+'</div><div class="vd">'+scen.conflict.b.d+'</div></div></div>':'')+'</div>';
+    }
+    h+='</div>';
+    h+='<div class="answer-section" style="margin-top:18px"><div class="h">引用 '+scen.cites.length+' 条 · 点击查看原文</div>'+citeCards(scen.cites)+'</div>';
+    h+='<div class="answer-section"><div class="h">接下来可以问</div><div class="followups">'+scen.followups.map(function(f){return '<button class="fu" data-ask="'+esc(f)+'">'+f+'</button>'}).join('')+'</div></div>';
+    h+=fbHTML(scen);
+    return h;
+  }
+  /* 拒答 / 边界 */
+  var h2='<div class="answer"><p class="plain"><strong>'+scen.plain+'</strong></p><p class="plain" style="font-size:14px;color:var(--ink2);margin-top:10px">'+scen.sub+'</p>';
+  if(scen.list)h2+='<ul class="empty-a" style="margin:12px 0 0;color:var(--ink2);font-size:13.5px;line-height:1.9">'+scen.list.map(function(x){return '<li style="margin-bottom:4px">'+x+'</li>'}).join('')+'</ul>';
+  if(scen.nearby){
+    h2+='<div class="nearby"><div class="nearby-hd"><span>最相近的 3 条原文 · 供你自己判断</span><span>相关度 0.44–0.51</span></div>'+
+      scen.nearby.map(function(n){return '<div class="nearby-item"><div class="nm"><span>'+n.v+'</span><span>'+n.s+'</span></div><div class="tx">'+n.t+'</div></div>'}).join('')+'</div>';
+  }
+  if(scen.cta)h2+='<div style="margin-top:14px"><button class="btn" data-act="go-corpus" data-admin>'+scen.cta+'</button></div>';
+  h2+='</div>';
+  h2+='<div class="answer-section" style="margin-top:20px"><div class="h">换一种问法</div><div class="followups">'+scen.followups.map(function(f){return '<button class="fu" data-ask="'+esc(f)+'">'+f+'</button>'}).join('')+'</div></div>';
+  h2+=fbHTML(scen);
+  return h2;
+}
+function citeCards(list){
+  return '<div class="cites"><div class="cites-hd"><span>'+list.length+' 条 · 均来自本次检索片段集</span><span>引用校验已通过</span></div>'+
+    list.map(function(c){
+      return '<button class="cite-card" data-cite="'+c.no+'"><span class="no">'+c.no+'</span><span><span class="loc"><span class="vol">'+c.vol+'</span> · '+c.doc+'</span><span class="snip">'+c.text+'</span><span class="sup">支持：'+c.supports+'</span></span></button>';
+    }).join('')+'</div>';
+}
+function fbHTML(scen){
+  return '<div class="fb"><span class="lbl">这条回答</span>'+
+    '<button data-act="fb" data-v="up"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M7 11v9H4v-9h3Zm0 0 4-8a2 2 0 0 1 2 2v4h5.2a2 2 0 0 1 2 2.4l-1.3 6A2 2 0 0 1 16.9 20H7"/></svg>有用</button>'+
+    '<button data-act="fb" data-v="down"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M7 13V4H4v9h3Zm0 0 4 8a2 2 0 0 0 2-2v-4h5.2a2 2 0 0 0 2-2.4l-1.3-6A2 2 0 0 0 16.9 4H7"/></svg>有误</button>'+
+    '<button data-act="report-gen"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 4h11l3 3v13H5z"/><path d="M8 12h7M8 16h5"/></svg>整理成报告</button>'+
+    '<span class="sp"></span><span class="meta">'+scen.meta.ms+' · '+(scen.meta.hits)+' 条召回</span></div>';
+}
+async function send(text){
+  if(!threadInner||text===undefined)return;
+  text=(text||'').trim();
+  if(!text){toast('先写一句要问的');return}
+  if($('#send-btn').disabled)return;
+  var scen=pick(text);
+  msgQ(text,scen);
+  $('#ta').value='';updateCount();
+  var el=msgShell();
+  $('#send-btn').disabled=true;
+  await runStages(el,scen);
+  $('.ans-body',el).innerHTML=bodyHTML(scen);
+  $('.stages',el).outerHTML=runMetaHTML(scen);
+  $$('.msg-a:last-child .ans-body > *').forEach(function(n,i){n.classList.add('fade-in');n.style.animationDelay=(i*45)+'ms'});
+  $('.badge',el).className='badge '+scen.badgeCls;
+  $('.badge',el).innerHTML='<i></i>'+scen.badge;
+  S.cites=scen.cites||[];
+  if(S.cites.length)renderEv(1,window.innerWidth>1180);else clearEv(scen.type);
+  $('#send-btn').disabled=false;
+  scrollBottom();
+}
+function clearEv(type){
+  $('#ev-count').textContent='0 条引用';
+  $('#ev-tabs').innerHTML='';
+  var m=type==='refuse'?'这次是拒答，所以没有引用。有引用的回答才有「取证」。':'这次没有可取证的内容。';
+  $('#ev-body').innerHTML='<div class="ev-empty"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H19v16H6.5A2.5 2.5 0 0 0 4 21.5Z"/><path d="M8 8h7M8 12h7"/></svg><p>'+m+'</p></div>';
+}
+function renderEv(no,open){
+  var list=S.cites;if(!list.length)return;
+  var c=list.filter(function(x){return x.no===+no})[0]||list[0];
+  $('#ev-count').textContent=list.length+' 条引用';
+  $('#ev-tabs').innerHTML=list.map(function(x){return '<button class="ev-tab" role="tab" data-cite="'+x.no+'" title="'+x.vol+' · '+x.doc+'" aria-selected="'+(x.no===c.no)+'">['+x.no+']</button>'}).join('');
+  $('#ev-body').innerHTML=
+    '<div class="ev-src"><span class="fade">'+c.before+'</span><span class="cited">'+c.text+'</span><span class="fade">'+c.after+'</span></div>'+
+    '<div class="ev-meta">'+
+      '<b>志书</b><span>'+c.doc+'</span>'+
+      '<b>卷次</b><span>'+c.vol+'</span>'+
+      '<b>页码</b><span>'+c.page+'（'+c.para+'）</span>'+
+      '<b>片段</b><span class="monoish">'+c.chunk+'</span>'+
+      '<b>提取</b><span>'+(c.ocr?'OCR 识别 · 需人工抽检':'文本层 · 未 OCR')+'</span>'+
+    '</div>'+
+    '<div class="ev-ctx"><button data-act="ev-ctx">展开上下文 ±200 字<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></button><div class="full">'+c.ctx+'</div></div>'+
+    '<div class="ev-acts"><button class="btn btn--sm" data-act="copy-src">复制原文</button><button class="btn btn--sm" data-act="mark-err">标注有误</button><button class="btn btn--sm" data-act="ask-this">就这段提问</button></div>'+
+    '<div class="hint-line" style="font-size:11.5px;margin-top:16px;color:var(--ink4)">定位到 chunk 与段落区间，不定位到具体字符，避免给出精确到字的虚假精度。</div>';
+  $$('.cite-card').forEach(function(el2){el2.classList.toggle('is-on',+el2.dataset.cite===c.no)});
+  if(open!==false)body.classList.add('ev-open');
+}
+
+/* ---------- 对话：事件 ---------- */
+document.addEventListener('click',function(e){
+  var t=e.target.closest('[data-cite]');
+  if(t&&S.cites.length){renderEv(t.dataset.cite);return}
+  if((t=e.target.closest('[data-ask]'))){send(t.dataset.ask);return}
+  if((t=e.target.closest('[data-act="send"]'))){send($('#ta').value);return}
+  var a=e.target.closest('[data-act]');if(!a)return;
+  switch(a.dataset.act){
+    case 'new-session':
+      threadInner.innerHTML=emptyHTML();sentCount=0;clearEv('empty');
+      $('#thread-title').textContent='新会话';toast('已新建会话');break;
+    case 'ev-toggle':$('#chat-grid').classList.toggle('no-ev');break;
+    case 'ev-close':$('#chat-grid').classList.add('no-ev');break;
+    case 'ev-ctx':a.parentNode.classList.toggle('is-open');break;
+    case 'copy-src':toast('已复制原文片段（含卷次与页码）');break;
+    case 'mark-err':toast('已记录：这条引用会进入抽检队列');break;
+    case 'ask-this':send('就这段原文，还有别的记载吗？');break;
+    case 'fb':
+      $$('[data-act="fb"]',a.parentNode).forEach(function(x){x.setAttribute('aria-pressed','false')});
+      a.setAttribute('aria-pressed','true');
+      toast(a.dataset.v==='up'?'已记录：有用':'已记录：这条会连 trace 一起进入负反馈列表');
+      break;
+    case 'report-gen':go('reports');toast('已带到报告中心，先确认大纲再成文');break;
+    case 'preview-on':
+      S.preview=!S.preview;body.dataset.preview=S.preview?'1':'0';
+      toast(S.preview?'已开启预览模式：检索范围加入待校对语料，本次会话不计入统计':'已退出预览模式');break;
+    case 'preview-off':S.preview=false;body.dataset.preview='0';toast('已退出预览模式');break;
+    case 'sess-toggle':body.classList.toggle('sess-open');break;
+    case 'go-corpus':go('corpus');break;
+    case 'open-trace':go('trace');break;
+  }
+});
+$$('.sess').forEach(function(b){b.addEventListener('click',function(){
+  $$('.sess').forEach(function(x){x.classList.remove('is-active')});b.classList.add('is-active');
+  var q=$('.q',b);if(q)$('#thread-title').textContent=q.textContent;
+})});
+$('#ta').addEventListener('keydown',function(e){
+  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send(this.value)}
+});
+function updateCount(){$('#ta-count').textContent=$('#ta').value.length+' / 2000'}
+$('#ta').addEventListener('input',function(){
+  updateCount();this.style.height='auto';this.style.height=Math.min(this.scrollHeight,150)+'px';
+});
+$$('[data-mode]').forEach(function(b){b.addEventListener('click',function(){
+  $$('[data-mode]').forEach(function(x){x.setAttribute('aria-pressed','false')});
+  b.setAttribute('aria-pressed','true');
+  toast(b.dataset.mode==='original'?'仅原文：只给片段，不给白话解读':'白话解读：结论＋解读＋引用');
+})});
+function emptyHTML(){return '<div class="empty-chat"><span class="seal" aria-hidden="true">志</span><h2>问一句县志里的事</h2><p>回答只取自已发布的县志，每条结论后面附卷次与原文。找不到就直说找不到，不编。</p>'+
+  '<div class="empty-list">'+
+  '<button class="empty-item" data-ask="本县有哪些古建筑？"><span class="qn">一</span><span class="qt">本县有哪些古建筑？</span><span class="qw">有据 · 含两说并列</span></button>'+
+  '<button class="empty-item" data-ask="清代本县出过哪些进士？"><span class="qn">二</span><span class="qt">清代本县出过哪些进士？</span><span class="qw">部分有据</span></button>'+
+  '<button class="empty-item" data-ask="本县 2025 年 GDP 是多少？"><span class="qn">三</span><span class="qt">本县 2025 年 GDP 是多少？</span><span class="qw">会拒答</span></button>'+
+  '<button class="empty-item" data-ask="帮我看看还没发布的卷七写了什么"><span class="qn">四</span><span class="qt">帮我看看还没发布的卷七写了什么</span><span class="qw">越权 · 会拒绝</span></button>'+
+  '</div>'+
+  '<div class="empty-note">当前可见语料：扶风县志（清乾隆本）· 32 卷 · 1,284 段 · 已发布<br>另有 1 部待校对，不在检索范围内</div></div>'}
+function buildExamples(){
+  var qs=['本县有哪些古建筑？','清代本县出过哪些进士？','帮我把这段加进县志','今天天气怎么样？'];
+  $('#example-row').innerHTML=qs.map(function(q){return '<button class="chip chip--q" data-ask="'+q+'">'+q+'</button>'}).join('');
+}
+buildExamples();
+
+/* ---------- 润色工作台 ---------- */
+var SEGS=[
+  {id:1,scope:'补标点 12 处 · 繁转简 31 字',state:'confirmed',sens:false,
+   raw:'縣城內古剎三法門寺在縣北二十里始建於東漢至明萬曆間重修塔存而寺廢',
+   pol:'县城内古刹三<ins>：</ins>法门寺在县北二十里<ins>，</ins>始建于东汉<ins>，</ins>至明万历间重修<ins>；</ins>塔存而寺废<ins>。</ins>'},
+  {id:2,scope:'补标点 3 处 · 繁转简 14 字',state:'confirmed',sens:false,
+   raw:'寺舊有田三十頃今僅存八頃隸於寺僧',
+   pol:'寺旧有田三十顷<ins>，</ins>今仅存八顷<ins>，</ins>隶于寺僧<ins>。</ins>'},
+  {id:3,scope:'补标点 6 处 · 繁转简 22 字 · 分段 1 处',state:'confirmed',sens:false,
+   raw:'大明寺在縣東十五里元至正間建明洪武清康熙兩次修葺今為僧舍像設僅存其一',
+   pol:'大明寺在县东十五里<ins>，</ins>元至正间建<ins>，</ins>明洪武<ins>、</ins>清康熙两次修葺<ins>。</ins>今为僧舍<ins>，</ins>像设仅存其一<ins>。</ins><div class="note">白话注释：大明寺为元代始建的佛寺，明清两代各修一次，清末已改作僧舍，塑像仅存一尊。</div>'},
+  {id:4,scope:'补标点 4 处 · 新增年份 1 处',state:'rejected',sens:true,
+   raw:'城隍廟在縣治西明洪武三年建正統間重修',
+   pol:'城隍庙在县治西<ins>，</ins>明洪武三年建<ins>，</ins><ins class="bad">康熙十二年知县周某重修，</ins>正统间重修<ins>。</ins>',
+   warn:'超出润色范围：原文没有「康熙十二年知县周某重修」。AI 补写了原文没有的内容，须驳回或删除后再确认。'},
+  {id:5,scope:'补标点 2 处 · 繁转简 11 字',state:'pending',sens:true,
+   raw:'崇禎十三年大旱民死者眾',
+   pol:'崇祯十三年大旱<ins>，</ins>民死者众<ins>。</ins><div class="note">建议补白话注释，但涉及伤亡数额，须先核对原卷。</div>'},
+  {id:6,scope:'仅补标点 4 处',state:'pending',sens:false,
+   raw:'文廟在縣治東南關帝廟在縣治西二廟俱有記',
+   pol:'文庙在县治东南<ins>，</ins>关帝庙在县治西<ins>，</ins>二庙俱有记<ins>。</ins>'}
+];
+function renderSegs(){
+  $('#seg-wrap').innerHTML=SEGS.map(function(s){
+    var cls='seg-row'+(s.state==='confirmed'?' is-confirmed':'')+(s.state==='rejected'?' is-rejected':'');
+    var stt=s.state==='confirmed'?'<span class="stt" style="color:var(--cang)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m5 13 4 4L19 7"/></svg>已确认</span>'
+      :s.state==='rejected'?'<span class="warn">已驳回 · 未进入发布</span>'
+      :'<span class="stt">待确认</span>';
+    var acts=s.state==='rejected'
+      ? '<button class="btn btn--sm" data-seg="'+s.id+'" data-segact="regen">按原文重新生成</button>'
+      : s.state==='confirmed'
+        ? '<button class="btn btn--sm btn--ghost" data-seg="'+s.id+'" data-segact="undo">撤回确认</button>'+
+          '<button class="btn btn--sm btn--ghost" data-seg="'+s.id+'" data-segact="edit">手动编辑</button>'
+        : '<button class="btn btn--sm btn--primary" data-seg="'+s.id+'" data-segact="ok">确认</button>'+
+          '<button class="btn btn--sm" data-seg="'+s.id+'" data-segact="no">驳回</button>'+
+          '<button class="btn btn--sm btn--ghost" data-seg="'+s.id+'" data-segact="edit">手动编辑</button>';
+    return '<div class="'+cls+'" id="seg-'+s.id+'">'+
+      '<div class="seg-cell"><div class="seg-lab">原文 · 只读'+(s.sens?'<span class="tag">需重点复核</span>':'')+'</div><div class="seg-raw">'+s.raw+'</div></div>'+
+      '<div class="seg-cell"><div class="seg-lab">润色稿 · 可编辑</div><div class="seg-pol">'+s.pol+'</div>'+(s.warn?'<div class="seg-pol"><div class="note" style="border-left-color:var(--zhu);color:var(--zhu);background:var(--zhu-soft)">'+s.warn+'</div></div>':'')+'</div>'+
+      '<div class="seg-ft">'+stt+'<span style="font-size:11px;color:var(--ink4)">'+s.scope+'</span><span class="sp"></span>'+acts+'</div>'+
+    '</div>';
+  }).join('');
+  var done=SEGS.filter(function(s){return s.state==='confirmed'}).length;
+  $('#p-done').textContent=done;$('#p-total').textContent=SEGS.length;
+  $('#p-bar').style.width=(done/SEGS.length*100)+'%';
+  var can=done===SEGS.length;
+  $('#p-publish').disabled=!can;
+  $$('[data-act="batch"]').forEach(function(b){b.disabled=!SEGS.some(function(s){return s.state==='pending'&&!s.sens})});
+}
+document.addEventListener('click',function(e){
+  var t=e.target.closest('[data-segact]');
+  if(t){
+    var s=SEGS.filter(function(x){return x.id===+t.dataset.seg})[0];
+    if(t.dataset.segact==='ok'){s.state='confirmed';toast('第 '+s.id+' 段已确认')}
+    if(t.dataset.segact==='no'){s.state='rejected';$('#seg-'+s.id).classList.add('is-focus');toast('第 '+s.id+' 段已驳回，不会进入发布')}
+    if(t.dataset.segact==='undo'){s.state='pending';toast('第 '+s.id+' 段已撤回确认')}
+    if(t.dataset.segact==='regen'){
+      s.pol=s.pol.replace(/<ins class="bad">[^<]*<\/ins>/g,'').replace(/<ins class="bad">.*?<\/ins>/g,'');
+      s.warn='';s.state='pending';
+      toast('已按原文重新生成：只保留标点与繁简转换，未补写内容');
+    }
+    if(t.dataset.segact==='edit'){toast('手动编辑：改动会记录「是否被人工修改」，用于统计 AI 采纳率')}
+    renderSegs();return;
+  }
+  var a=e.target.closest('[data-act]');if(!a)return;
+  switch(a.dataset.act){
+    case 'p-drawer':$('#polish-grid').classList.toggle('no-drawer');break;
+    case 'batch':
+      SEGS.forEach(function(s){if(s.state==='pending'&&!s.sens)s.state='confirmed'});
+      renderSegs();toast('已批量确认未修改段：含敏感标记的段落不参与批量');break;
+    case 'rollback':toast('已回滚到 v2：当前 v3 保留在版本表里，可再切回');break;
+    case 'go-polish':go('polish');break;
+  }
+});
+renderSegs();
+
+/* ---------- 报告 ---------- */
+var OL=[
+  {t:'建置沿革',p:'从秦内史地说起，梳理历代隶属变化，重点标注三次改隶',src:'卷二·建置 · p.41–52'},
+  {t:'城池与公署',p:'城垣规模、城门数目、县署与僚属公署的位置与兴废',src:'卷二·建置 · p.53–60'},
+  {t:'祠祀与寺观',p:'坛庙、寺观的始建与重修；两说并存处并列呈现',src:'卷三·祠祀 · p.61–74'},
+  {t:'人物与科第',p:'进士、举人名单；仅存姓名者单独标注，不并入可考名单',src:'卷七·选举 · p.140–156'},
+  {t:'艺文与碑记',p:'碑记存目与全文收录情况，注明残缺字数',src:'卷九·金石 · p.188–204'}
+];
+function renderOL(){
+  $('#ol-rows').innerHTML=OL.map(function(o,i){
+    return '<div class="ol-row"><div class="idx">'+(i+1)+'</div><div><div class="ti">'+o.t+'</div><div class="pt">'+o.p+'</div><div class="rc">预计引用：'+o.src+'</div></div>'+
+      '<div class="ops"><button class="btn btn--sm btn--ghost btn--icon" data-ol="up" data-i="'+i+'" aria-label="上移"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 14 6-6 6 6"/></svg></button>'+
+      '<button class="btn btn--sm btn--ghost btn--icon" data-ol="del" data-i="'+i+'" aria-label="删除"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div></div>';
+  }).join('');
+}
+renderOL();
+document.addEventListener('click',function(e){
+  var o=e.target.closest('[data-ol]');
+  if(o){
+    var i=+o.dataset.i;
+    if(o.dataset.ol==='del'&&OL.length>1){OL.splice(i,1);toast('已删除一章')}
+    if(o.dataset.ol==='up'&&i>0){var x=OL.splice(i,1)[0];OL.splice(i-1,0,x)}
+    renderOL();return;
+  }
+  var a=e.target.closest('[data-act]');if(!a)return;
+  switch(a.dataset.act){
+    case 'ol-add':OL.push({t:'新增章节',p:'补充这一章的检索要点，越具体越好',src:'待指定'});renderOL();toast('已加一章：确认前可改标题与要点');break;
+    case 'rep-reset':$('#rep-outline').style.display='';$('#rep-stage').innerHTML='';break;
+    case 'rep-generate':runReport();break;
+    case 'retry-sec':toast('已重试该节：其他章节的结果保留');break;
+    case 'export':toast('导出任务已排队，完成后给 24 小时有效的下载链接');break;
+  }
+});
+async function runReport(){
+  $('#rep-outline').style.display='none';
+  var st=$('#rep-stage');
+  st.innerHTML='<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><span style="font-size:12px;color:var(--ink3)">生成中 · 每节独立检索成文，节间传已写要点摘要</span><span style="flex:1"></span><span class="badge" style="height:18px;font-size:10.5px">可离开本页</span></div>'+
+    '<div class="outline" id="gen-box"><div class="ol-hd"><span>共 '+OL.length+' 节</span><span class="sp"></span><span id="gen-sum">0 / '+OL.length+'</span></div>'+
+    OL.map(function(o,i){return '<div class="gen-row" id="gr-'+i+'"><div class="idx" style="font-size:11.5px;color:var(--ink4)">'+(i+1)+'</div><div>'+o.t+'</div><div class="gs"><span>等待</span></div></div>'}).join('')+'</div>';
+  var failAt=2;
+  for(var i=0;i<OL.length;i++){
+    var row=$('#gr-'+i);row.className='gen-row is-run';$('.gs',row).innerHTML='<span class="spin"></span><span>检索中</span>';
+    await sleep(RM?60:900);
+    if(i===failAt){
+      row.className='gen-row is-fail';$('.gs',row).innerHTML='<span>生成失败</span>';
+      row.children[1].innerHTML=OL[i].t+'<div style="font-size:11px;color:var(--zhu);margin-top:3px">该节检索到 2 条片段，均低于阈值；其余章节已保留</div>';
+      row.children[2].innerHTML='<button class="btn btn--sm" data-act="retry-sec">重试该节</button>';
+    }else{
+      row.className='gen-row is-done';$('.gs',row).innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="m5 13 4 4L19 7"/></svg><span>完成</span>';
+    }
+    $('#gen-sum').textContent=(i+1)+' / '+OL.length;
+  }
+  await sleep(RM?60:500);
+  st.insertAdjacentHTML('beforeend',
+    '<div style="display:flex;align-items:center;gap:8px;margin:18px 0 12px;flex-wrap:wrap">'+
+    '<span style="font-size:12.5px;font-weight:500">报告已生成</span><span class="badge badge--partial" style="height:19px;font-size:10.5px"><i></i>1 节失败</span>'+
+    '<span style="font-size:11.5px;color:var(--ink3)">3 分 12 秒 · 4,180 字 · 引用 23 条</span><span style="flex:1"></span>'+
+    '<button class="btn btn--sm" data-act="export">导出 Markdown</button><button class="btn btn--sm btn--primary" data-act="export">导出 DOCX</button></div>'+
+    repDoc());
+  st.scrollIntoView({block:'start'});
+}
+function repDoc(){
+  return '<div class="rep-doc"><h1>扶风县历史沿革</h1><div class="sub">据清乾隆本《扶风县志》整理 · 生成于 2026-10-29 · 供乡土教材参考</div>'+
+    '<h2>一、建置沿革</h2><p>扶风之地，秦属内史，汉为右扶风。<span class="rf">[1]</span>其后历代隶属屡有变更，志书于卷二·建置中逐条记载，其中三次改隶影响最大。<span class="rf">[1][2]</span></p>'+
+    '<h2>二、城池与公署</h2><p>县城周四里，门四：东曰迎旭，西曰望岐，南曰阜民，北曰拱辰。<span class="rf">[3]</span>县署在城之中街，明洪武间建，其后屡有增修。</p>'+
+    '<h2>三、祠祀与寺观</h2><p style="color:var(--zhu)">本节生成失败：检索到的 2 条片段相关度低于阈值，未成文，也不使用其他章节内容顶替。</p>'+
+    '<h2>四、人物与科第</h2><p>清代进士可考者三人：张念祖、李元标、王锡嘏。<span class="rf">[5]</span>另有仅存姓名者一人，科年缺失，本篇不并入可考名单。</p>'+
+    '<h2>五、艺文与碑记</h2><p>卷九·金石收录碑记十一篇，其中三篇残缺，残缺字数在四十字上下。<span class="rf">[6]</span></p>'+
+    '<div class="src-list"><div class="h">出处清单 · 按书名与卷次排序去重</div><ul>'+
+    '<li><span>[1]</span><span>扶风县志 · 卷二·建置 · p.41</span></li>'+
+    '<li><span>[2]</span><span>扶风县志 · 卷二·建置 · p.44</span></li>'+
+    '<li><span>[3]</span><span>扶风县志 · 卷二·建置 · p.55</span></li>'+
+    '<li><span>[4]</span><span>扶风县志 · 卷三·祠祀 · p.63</span></li>'+
+    '<li><span>[5]</span><span>扶风县志 · 卷七·选举 · p.142</span></li>'+
+    '<li><span>[6]</span><span>扶风县志 · 卷九·金石 · p.188</span></li>'+
+    '</ul></div></div>';
+}
+$$('[data-tpl]').forEach(function(b){b.addEventListener('click',function(){
+  $$('[data-tpl]').forEach(function(x){x.classList.remove('is-on')});b.classList.add('is-on');
+  $('#rep-title').textContent='县域'+b.dataset.tpl;
+  $('#rep-outline').style.display='';$('#rep-stage').innerHTML='';
+})});
+
+/* ---------- 轨迹 ---------- */
+var TR=[
+  {i:0,n:'鉴权与装配',ms:18,c:'s0',body:'从令牌解析角色，按角色计算 visible_corpus_ids（已发布 ∩ 扶风县），装载记忆槽与摘要。'},
+  {i:1,n:'意图判定',ms:74,c:'s1',body:'四分类命中「县志问答」，置信度 0.93；不是报告、不是闲聊、不是写操作。'},
+  {i:2,n:'查询改写',ms:0,c:'s2',skip:true,body:'单轮提问，未触发改写。多轮时才对指代做消解。'},
+  {i:3,n:'混合检索',ms:3120,c:'s3',body:'向量 top20 + BM25 top20 → RRF 融合 → rerank 取 5–8。首轮 top1=0.48，未达阈值 0.62，放宽类目再检一次，top1=0.51，仍未达阈值。'},
+  {i:4,n:'充分性判定',ms:21,c:'s4',fail:true,body:'按 DR-09 判定为「全部低于阈值」，进入拒答分支，附 3 条最相近原文。'},
+  {i:5,n:'生成',ms:1860,c:'s5',body:'按拒答模板生成：明确说明未找到记载，不使用「大约」「据估计」包装，不引入片段外知识。'},
+  {i:6,n:'输出校验',ms:96,c:'s6',body:'校验通过：0 条断言需要引用，无禁用内容，无未授权语料痕迹。'},
+  {i:7,n:'交付',ms:0,c:'s7',skip:true,body:'流式返回完成，附换问法建议与反馈入口。'}
+];
+function renderTrace(){
+  var total=TR.reduce(function(a,b){return a+b.ms},0);
+  $('#wf').innerHTML=TR.map(function(s){
+    if(!s.ms)return '';
+    var w=Math.max(s.ms/total*100,4);
+    return '<div class="'+s.c+'" data-stage="'+s.i+'" style="width:'+w+'%" title="'+s.n+' '+s.ms+'ms">'+(s.ms/total>0.12?s.n:'')+'</div>';
+  }).join('');
+  $('#tr-stages').innerHTML=TR.map(function(s,i){
+    return '<button class="tr-stage'+(i===3?' is-on':'')+(s.fail?' is-fail':'')+'" data-stage="'+i+'"><span class="n">'+s.i+'</span><span class="nm">'+s.n+'</span><span class="ms">'+(s.skip?'跳过':s.ms+'ms')+'</span></button>';
+  }).join('');
+  $('#tr-chunks').innerHTML=[
+    ['c_10231','0.48'],['c_10244','0.46'],['c_10488','0.44'],['c_20117','0.41'],['c_20118','0.39'],
+    ['c_30882','0.37'],['c_10251','0.35'],['c_20121','0.33'],['c_11340','0.29'],['c_11344','0.27'],['c_13201','0.24'],['c_13205','0.21']
+  ].map(function(x){return '<span class="chunk'+(+x[1]<0.34?' low':'')+'"><b>'+x[0]+'</b> '+x[1]+'</span>'}).join('');
+  showStage(3);
+}
+function showStage(i){
+  var s=TR[i];
+  var extra='';
+  if(i===3){
+    extra='<div style="font-size:11.5px;color:var(--ink3);letter-spacing:.06em;margin:14px 0 6px">工具调用</div>'+
+    '<table class="mini"><thead><tr><th>工具</th><th>参数摘要</th><th class="r">返回</th><th class="r">最高分</th><th class="r">耗时</th></tr></thead><tbody>'+
+    '<tr><td>T1 混合检索</td><td>q=法门寺塔始建年代 · region=610324 · top_k=20</td><td class="r">12</td><td class="r">0.48</td><td class="r">1,840ms</td></tr>'+
+    '<tr><td>T1 混合检索（放宽类目）</td><td>同上，去类目限制，top_k=20</td><td class="r">9</td><td class="r">0.51</td><td class="r">1,120ms</td></tr>'+
+    '<tr><td>T2 上下文扩展</td><td>chunk=c_10231 · 窗口 ±200 字</td><td class="r">1</td><td class="r">—</td><td class="r">160ms</td></tr>'+
+    '</tbody></table>';
+  }
+  if(i===4){
+    extra='<div style="font-size:11.5px;color:var(--ink3);letter-spacing:.06em;margin:14px 0 6px">判定详情</div>'+
+    '<table class="mini"><thead><tr><th>判定项</th><th class="r">阈值</th><th class="r">实际</th><th>结论</th><th>原因码</th></tr></thead><tbody>'+
+    '<tr><td>top1 相关度</td><td class="r">≥ 0.62</td><td class="r">0.51</td><td><span class="verdict no">不足</span></td><td>low_score</td></tr>'+
+    '<tr><td>命中片段数</td><td class="r">≥ 2</td><td class="r">9</td><td><span class="verdict ok">满足</span></td><td>—</td></tr>'+
+    '<tr><td>扩检轮次</td><td class="r">≤ 2</td><td class="r">2</td><td><span class="verdict ok">已用尽</span></td><td>max_round</td></tr>'+
+    '<tr><td>类目覆盖</td><td class="r">≥ 1</td><td class="r">3（建置/祠祀/金石）</td><td><span class="verdict ok">满足</span></td><td>—</td></tr>'+
+    '</tbody></table>'+
+    '<p style="font-size:11.5px;color:var(--ink3);line-height:1.8;margin-top:10px">判定结论：不是模型答错，而是语料不足以支撑确定性回答。下一步动作应在语料侧（补卷九碑记全文）或分块侧（条目是否被切断），不在提示词侧。</p>';
+  }
+  if(i===6){
+    extra='<div style="font-size:11.5px;color:var(--ink3);letter-spacing:.06em;margin:14px 0 6px">校验详情</div>'+
+    '<table class="mini"><thead><tr><th>校验项</th><th>结果</th><th>采取动作</th></tr></thead><tbody>'+
+    '<tr><td>引用 id ∈ 本次片段集</td><td><span class="verdict ok">通过</span></td><td>无需处理</td></tr>'+
+    '<tr><td>无引用的事实性断言</td><td><span class="verdict ok">0 条</span></td><td>无需处理</td></tr>'+
+    '<tr><td>禁用内容（评价性结论/语料外数字）</td><td><span class="verdict ok">未命中</span></td><td>无需处理</td></tr>'+
+    '<tr><td>未发布语料的痕迹</td><td><span class="verdict ok">无</span></td><td>无需处理</td></tr>'+
+    '</tbody></table>';
+  }
+  $('#tr-detail').innerHTML='<div class="dh"><span class="n" style="font-size:10.5px;color:var(--ink4)">阶段 '+s.i+'</span><span>'+s.n+'</span>'+
+    '<span class="badge" style="height:18px;font-size:10.5px">'+(s.skip?'跳过':s.ms+' ms')+'</span>'+(s.fail?'<span class="badge badge--refuse" style="height:18px;font-size:10.5px"><i></i>降级</span>':'')+
+    '<span class="sp"></span><span style="font-size:10.5px;color:var(--ink4)">入参摘要 · 出参摘要</span></div>'+
+    '<div class="db"><div class="io"><div><div class="h">入参</div><pre>'+
+      (i===0?'token=***（admin/user）\nsession_id=s_8821\nregion_id=610324\nvisible_corpus_ids=[doc_11,doc_12,doc_15]':
+       i===3?'query="法门寺塔始建年代"\nregion_id=610324\ntop_k=20\nvisible_corpus_ids=[doc_11,doc_12,doc_15]\ncategory=null → 建置':
+       i===4?'chunks=12\ntop1_score=0.48\nthreshold=0.62\nround=1/2':
+       i===5?'answer_type=refuse\nreason=low_score\nnearby=3\nconstraint=no_outside_knowledge':
+       i===6?'claims=0\ncitations=0\nbanned_hit=false\nunauthorized_ref=0':
+       'assembled_context=ok')+'</pre></div><div><div class="h">出参</div><pre>'+
+      (i===3?'chunks=12 → 9（放宽）\ntop1=0.48 → 0.51\nelapsed=3120ms':
+       i===4?'verdict=insufficient\nreason=low_score\naction=refuse_with_nearby':
+       i===5?'text=…（拒答话术，48 字）\ntoken_out=486':
+       i===6?'status=pass\naction=none':
+       'stage=ok')+'</pre></div></div>'+
+      '<p style="font-size:12.5px;line-height:1.85;color:var(--ink2)">'+s.body+'</p>'+extra+'</div>';
+  $$('.tr-stage').forEach(function(b){b.classList.toggle('is-on',+b.dataset.stage===i)});
+}
+document.addEventListener('click',function(e){
+  var t=e.target.closest('[data-stage]');
+  if(t){showStage(+t.dataset.stage);return}
+  if(e.target.closest('.wf div')){
+    var idx=$$('.wf div').indexOf(e.target.closest('.wf div'));
+    showStage(idx);return;
+  }
+  var a=e.target.closest('[data-act]');if(!a)return;
+  if(a.dataset.act==='to-eval'){toast('已存入评测集：保留 source_trace_id，可直接进回归集')}
+  if(a.dataset.act==='tr-cmp'){
+    $('#tr-cmp-wrap').innerHTML='<div class="cmp"><div class="cmp-col"><div class="ch"><span>本条 · tr_20261029_7f3a91</span><span class="badge badge--refuse" style="height:17px;font-size:10px"><i></i>拒答</span></div><div class="cb">'+
+      '<div class="diff-hi">top1 0.48 · 阈值 0.62 · 判定不足</div><div style="margin-top:6px">检索 2 轮 · 12/9 条 · 引用 0</div><div style="margin-top:6px;color:var(--ink3)">总耗时 5.19s</div></div></div>'+
+      '<div class="cmp-col"><div class="ch"><span>对照组 · tr_20261028_3c81b2</span><span class="badge badge--fact" style="height:17px;font-size:10px"><i></i>有据</span></div><div class="cb">'+
+      '<div>top1 0.74 · 阈值 0.62 · 判定充分</div><div style="margin-top:6px">检索 1 轮 · 11 条 · 引用 4</div><div class="diff-hi" style="margin-top:6px">总耗时 4.02s</div></div></div></div>'+
+      '<p style="font-size:11.5px;color:var(--ink3);line-height:1.8;margin-top:10px">差异集中在检索阶段：同一问题在补入卷九碑记全文后 top1 从 0.48 升到 0.74。这类对比是调分块与补语料的依据。</p>';
+    toast('已进入对比模式：高亮为阶段级差异');
+  }
+});
+renderTrace();
+
+/* ---------- 语料页 ---------- */
+document.addEventListener('click',function(e){
+  var f=e.target.closest('[data-filter]');
+  if(f){
+    $$('[data-filter]').forEach(function(x){x.classList.toggle('chip--on',x===f)});
+    var v=f.dataset.filter;
+    $$('#corpus-tbl tbody tr').forEach(function(tr){tr.style.display=(v==='all'||tr.dataset.state===v)?'':'none'});
+    return;
+  }
+  var a=e.target.closest('[data-act]');if(!a)return;
+  switch(a.dataset.act){
+    case 'upload-open':$('#m-upload').classList.add('is-open');break;
+    case 'modal-close':$$('.modal').forEach(function(m){m.classList.remove('is-open')});break;
+    case 'fake-file':break;
+    case 'upload-submit':toast('已提交解析：预计 3 分钟完成提取与分段');$$('.modal').forEach(function(m){m.classList.remove('is-open')});break;
+    case 'offline':$('#m-offline').classList.add('is-open');break;
+    case 'offline-confirm':
+      $$('.modal').forEach(function(m){m.classList.remove('is-open')});
+      toast('已下线：登录用户立即检索不到，引用会标记为「已下线」');break;
+    case 'retry':toast('已重试解析：任务排队中，最多重试 3 次，指数退避');break;
+    case 'fill':toast('补录：逐页录入缺文本内容，不允许把空页当正常页');break;
+    case 'cancel-task':toast('已取消解析任务（不可恢复）');break;
+    case 'continue':toast('继续填写：补齐版本说明与授权说明后才能提交解析');break;
+    case 'view-doc':go('polish');break;
+    case 'publish':$('#m-publish').classList.add('is-open');break;
+    case 'publish-confirm':
+      $$('.modal').forEach(function(m){m.classList.remove('is-open')});
+      toast('已发布：登录用户现在可以检索到这部县志');break;
+  }
+});
+$('#corpus-search').addEventListener('input',function(){
+  var v=this.value.trim();
+  $$('#corpus-tbl tbody tr').forEach(function(tr){tr.style.display=(!v||tr.textContent.indexOf(v)>-1)?'':'none'});
+});
+/* 自查清单 */
+document.addEventListener('change',function(e){
+  if(!e.target.matches('[data-chk]'))return;
+  var box=e.target.closest('.modal-box');
+  var all=$$('[data-chk]',box),done=all.filter(function(x){return x.checked}).length;
+  var btn=$('[data-act="publish-confirm"]',box);
+  btn.disabled=done<all.length;
+  $('#pub-note').textContent=done<all.length?('还需勾选 '+(all.length-done)+' 项'):'5 项已确认';
+});
+/* 下线二次确认 */
+document.addEventListener('input',function(e){
+  if(e.target.id!=='off-name')return;
+  var v=e.target.value.trim();
+  $('[data-act="offline-confirm"]').disabled=!(v.indexOf('扶风县志')===0||v==='扶风县志（清乾隆本）');
+});
+
+/* ---------- 说明页 ---------- */
+function buildSpec(){
+  $('#spec-body').dataset.built='1';
+  var sw=[['纸 paper','#eceee8','页面底色，冷灰绿，不用暖奶油'],['墨 ink','#161a18','正文；带绿调的近黑'],['朱 zhu','#a62b20','只标引用与存疑'],['青 qing','#2f4f4a','结构、导航、焦点'],['墨二次','#4c544f','次级文字'],['界线','#d5dad1','1px 分隔，不用阴影']];
+  $('#spec-body').innerHTML=
+  '<span class="tagline">交互原型 · v1.0 · 对应需求分析报告 v1.2</span>'+
+  '<h1>问志：把「有出处」做成看得见的版式</h1>'+
+  '<p class="lede">这是一份可点击的高保真原型，覆盖两类角色、五个核心页面与一处说明页。面向桌面浏览器（≥ 1024px），所有交互都在浏览器内运行，不依赖后端；问答、润色、生成、轨迹四处的数据为脚本化示例。</p>'+
+
+  '<h2><span class="no">壹</span>设计主张</h2>'+
+  '<p>县域方志产品很容易滑向「古籍风」：米色底、竖排、印章、水墨。那套视觉说明不了这个产品真正在做什么。它做的事只有一件——<b>让你核对一句话有没有出处</b>。所以视觉语言取自校勘学的朱墨双色：<b>墨是史料与结论，朱是人对史料的标记</b>。朱色在整份界面里不承担任何装饰功能，出现即意味着「这里有一条可核对的证据，或一处需要你判断的存疑」。</p>'+
+  '<p>最直接的结果是答案的形态：它不是一个聊天气泡，而是一条<b>带页边批注的条目</b>。事实性断言左侧留出 42px 页边，朱色编号挂在与它对应的那一句旁边。没有编号的句子，就说明它没有出处——这条规则在需求里叫「每个事实性断言必须有引用」，在这里变成了版式本身。</p>'+
+  '<div class="mini">'+
+    '<div class="mini-top"><span>对话主区 · 一条回答的解剖</span><span>阅读宽度 ≤ 772px</span></div>'+
+    '<div class="mini-row" style="height:auto">'+
+      '<div class="mini-cell is-core" style="display:flex;padding:0;border-style:solid">'+
+        '<div class="mini-gut" style="align-self:stretch">朱<br>编<br>号</div>'+
+        '<div style="padding:10px 12px;flex:1">'+
+          '<div style="font-size:12.5px;color:var(--ink);font-weight:500;margin-bottom:7px;line-height:1.7">志书里有明确记载的古建筑共 3 处……</div>'+
+          '<div style="font-size:11.5px;color:var(--ink2);line-height:1.95">法门寺塔在县北二十里，志载始建于东汉……</div>'+
+          '<div style="font-size:10.5px;color:var(--ink4);margin-top:9px">↑ 每条事实性断言左侧都挂一个编号；没有编号的句子＝没有出处</div>'+
+        '</div>'+
+      '</div>'+
+      '<div class="mini-cell is-zhu" style="flex:0 0 40%">'+
+        '<b>取证栏 344 · 常驻</b>'+
+        '<span style="color:var(--zhu);font-size:10.5px">[1] 卷二·建置 · p.46 第 3 段</span><br>'+
+        '<span style="font-family:var(--font-src);color:var(--ink2);display:block;margin-top:4px;line-height:1.95">「法门寺在县北二十里，始建于东汉……」</span>'+
+        '<span style="display:block;margin-top:6px;color:var(--ink4)">上下文 ±200 字 · 复制原文</span>'+
+      '</div>'+
+    '</div>'+
+  '</div>'+
+  '<div class="mini-legend"><span>朱<em>只标引用、存疑、越界</em></span><span>宋体<em>只给史料原文</em></span><span>黑体<em>产品自己的话</em></span><span>1px 线<em>不用阴影堆叠</em></span></div>'+
+  '<h3>三条做法</h3>'+
+  '<ul>'+
+  '<li><b>宋体只用在引文上。</b>史料用宋体，界面用黑体。字体分工是语义的：宋体是「别人说的话」，黑体是「我们说的话」。这样用户永远分得清哪句是志书原文、哪句是产品的白话解读。</li>'+
+  '<li><b>状态靠文字，不靠颜色。</b>六种文档状态都带文字标签，色点只是辅助。色盲用户、灰度打印都不丢信息。</li>'+
+  '<li><b>只在一处用力。</b>页边批注是这份界面唯一「响」的地方，其余全部收住：无渐变、无卡片阴影堆叠、圆角 2px、分隔只用 1px 线。</li>'+
+  '</ul>'+
+
+  '<h2><span class="no">贰</span>设计 token</h2>'+
+  '<h3>颜色</h3><div class="swatches">'+sw.map(function(x){return '<div class="sw"><div class="c" style="background:'+x[1]+'"></div><div class="l"><b>'+x[0]+'</b><span>'+x[1]+' · '+x[2]+'</span></div></div>'}).join('')+'</div>'+
+  '<h3>字阶与字体</h3>'+
+  '<table><tr><th>用途</th><th>字号 / 行高</th><th>字重</th><th>字体</th></tr>'+
+  '<tr><td><b>页面标题</b></td><td>20–26px / 1.3</td><td>600</td><td>黑体栈</td></tr>'+
+  '<tr><td><b>结论句</b></td><td>17px / 1.85</td><td>500</td><td>黑体栈</td></tr>'+
+  '<tr><td><b>界面正文</b></td><td>13–14px / 1.6</td><td>400</td><td>黑体栈</td></tr>'+
+  '<tr><td><b>史料引文</b></td><td>13–14px / 1.95–2.1</td><td>400</td><td>宋体栈（SimSun / Songti SC）</td></tr>'+
+  '<tr><td><b>元数据</b></td><td>11–11.5px / 1.6</td><td>400</td><td>黑体栈 · tabular-nums</td></tr></table>'+
+  '<p>不用等宽字体做小标签：那会让界面显得像开发者工具，而县志的用户是教师和文化爱好者。数字对齐用 <code>font-variant-numeric: tabular-nums</code> 解决。</p>'+
+
+  '<h2><span class="no">叁</span>页面地图</h2>'+
+  '<table><tr><th>页面</th><th>角色</th><th>核心任务</th><th>关键状态</th></tr>'+
+  '<tr><td><b>登录 / 注册</b></td><td>全部</td><td>用邀请码进入内测</td><td>默认、字段错误、邀请码失效</td></tr>'+
+  '<tr><td><b>对话页</b></td><td>全部</td><td>提问、追问、取证</td><td>空态、生成中、有据、部分有据、拒答、越权拒绝、能力边界、预览模式</td></tr>'+
+  '<tr><td><b>报告中心</b></td><td>全部</td><td>选模板→确认大纲→生成→导出</td><td>大纲待确认、逐节生成、单节失败、已完成</td></tr>'+
+  '<tr><td><b>语料管理</b></td><td>仅管理员</td><td>上传、看状态、发起润色</td><td>6 种状态、上传校验失败、下线二次确认</td></tr>'+
+  '<tr><td><b>润色工作台</b></td><td>仅管理员</td><td>逐段对照、确认、发布</td><td>待确认、已确认、已驳回、越界警告、发布自查</td></tr>'+
+  '<tr><td><b>轨迹查看</b></td><td>仅管理员</td><td>判断「错在哪一阶段」</td><td>阶段详情、降级标记、双条对比</td></tr>'+
+  '<tr><td><b>本页 · 说明</b></td><td>全部</td><td>读设计决策与响应式规则</td><td>—</td></tr></table>'+
+  '<p>登录用户在导航上只有「对话／报告／说明」三项。这只是体验层收敛；<b>接口层必须独立鉴权</b>，否则隐藏入口等于没做权限。</p>'+
+
+  '<h2><span class="no">肆</span>布局与页面结构</h2>'+
+  '<div class="mini">'+
+    '<div class="mini-top"><span>顶栏 52 · 品牌／县选择器（县名＋年代口径）／标注／原型角色／账号</span><span>全局</span></div>'+
+    '<div class="mini-row">'+
+      '<div class="mini-cell" style="flex:0 0 7%;text-align:center;padding-top:8px">导<br>航<br><span style="font-size:9.5px">64</span></div>'+
+      '<div class="mini-cell" style="flex:0 0 19%"><b>会话 264</b>新建会话<br><span style="color:var(--ink4)">今天</span><br>本县有哪些古建筑<br><span style="color:var(--ink4)">昨天</span><br>法门寺塔的两说</div>'+
+      '<div class="mini-cell is-core"><b>正文 · 阅读区（≤772）</b>会话头：标题 · 模式 · 预览 · 取证<br>问题块（青左线）<br>阶段点 → 摘要行<br>断言 ＋ 页边编号<br>存疑 / 冲突（朱框）<br>引用卡 · 追问 · 反馈<br><span style="display:block;border-top:1px solid var(--line2);margin-top:5px;padding-top:4px;color:var(--ink2)">输入框（吸底，不随滚动）</span></div>'+
+      '<div class="mini-cell" style="flex:0 0 23%"><b>取证 344</b><span style="color:var(--zhu)">[1][2][3][4]</span><br>原文（宋体）<br>卷次 · 页码 · 片段 id<br>上下文开关<br>复制 / 标注有误</div>'+
+    '</div>'+
+  '</div>'+
+  '<div class="mini-legend"><span>≥1440<em>四栏同上</em></span><span>1280–1440<em>取证收窄至 308</em></span><span>1024–1180<em>取证转浮层</em></span><span>&lt;1024<em>不支持</em></span></div>'+
+  '<p>对齐规则：整份界面左对齐，只有登录页的引文块与空态标题用居中构图。正文行宽控制在 68–72 个汉字，超过就分栏而不是拉宽。列表区行高 40–44px（工具感），阅读区行高 1.95（书房感）。</p>'+
+
+  '<h2><span class="no">伍</span>关键交互</h2>'+
+  '<table><tr><th>页面</th><th>触发</th><th>反馈</th><th>对应约束</th></tr>'+
+  '<tr><td rowspan="4">对话</td><td>输入并发送</td><td>先出现 3–4 个阶段点（检索/判定/生成），完成后收成一行摘要：召回数、采用数、扩检、耗时</td><td>把 Agent 的阶段决策暴露出来，但不展开思维链</td></tr>'+
+  '<tr><td>点页边编号</td><td>取证栏切到该条，显示原文、卷次、页码、片段 id、上下文开关</td><td>引用闭环：只能看到本次检索片段集里的内容</td></tr>'+
+  '<tr><td>追问「第二个」</td><td>回答前先回显「你问的是第 2 位·某某」</td><td>DR-05 指代消解，改写结果可被用户当场否证</td></tr>'+
+  '<tr><td>问未发布的卷七</td><td>拒答，且不确认该卷是否存在；取证栏显示「这次是拒答，所以没有引用」</td><td>权限来源唯一；不透露未发布语料细节</td></tr>'+
+  '<tr><td rowspan="3">语料</td><td>状态筛选</td><td>行内过滤，计数写在 chip 上</td><td>6 态状态机</td></tr>'+
+  '<tr><td>点「发布」</td><td>弹自查清单，5 项全勾才可提交</td><td>替代被取消的审核环节</td></tr>'+
+  '<tr><td>点「下线」</td><td>要求输入书名才能确认</td><td>不可撤销动作的二次确认</td></tr>'+
+  '<tr><td rowspan="3">润色</td><td>逐段「确认/驳回」</td><td>进度条与发布按钮联动；未全部确认不能发布</td><td>FR-B11 逐段确认</td></tr>'+
+  '<tr><td>遇到 AI 补写年份</td><td>段内朱色警告＋「按原文重新生成」，重新生成只保留标点与繁简转换</td><td>FR-B10 润色范围限定</td></tr>'+
+  '<tr><td>发布前</td><td>清单勾选，勾满才解禁</td><td>FR-B15 发布前自查</td></tr>'+
+  '<tr><td rowspan="3">报告</td><td>选模板</td><td>右侧换成大纲，可增删章节后确认</td><td>Ask first：大纲确认后才成文</td></tr>'+
+  '<tr><td>生成中</td><td>逐节状态（等待/检索中/完成/失败），可离开本页</td><td>FR-E07 单节失败不整篇回滚</td></tr>'+
+  '<tr><td>导出</td><td>排队，给 24 小时有效链接</td><td>FR-E06</td></tr>'+
+  '<tr><td rowspan="2">轨迹</td><td>点瀑布色块或阶段名</td><td>右侧换成该阶段入参/出参/工具表/判定表</td><td>FR-S07</td></tr>'+
+  '<tr><td>「对比另一条」</td><td>并排两列，高亮阶段级差异</td><td>FR-S08</td></tr></table>'+
+
+  '<h2><span class="no">陆</span>元素状态示例</h2>'+
+  '<div class="state-grid">'+
+  '<div class="state-cell"><div class="sh">按钮</div>'+
+    '<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn--primary">确认大纲并生成</button><button class="btn" disabled>发布</button></div>'+
+    '<div style="display:flex;gap:6px;margin-top:8px;align-items:center"><button class="btn btn--sm"><span class="spin"></span>重试中</button><span style="font-size:10.5px;color:var(--ink4)">加载态禁用重复提交</span></div></div>'+
+  '<div class="state-cell"><div class="sh">输入框</div>'+
+    '<div class="field" style="margin:0 0 8px"><div class="inp"><input placeholder="默认态"></div></div>'+
+    '<div class="field is-error" style="margin:0"><div class="inp"><input value="缺必填项" readonly></div><div class="hint">缺来源授权说明，不允许提交</div></div></div>'+
+  '<div class="state-cell"><div class="sh">文档状态（文字＋色点）</div>'+
+    '<div style="display:flex;flex-direction:column;gap:6px">'+
+    '<span class="st st--draft"><i class="dot"></i>草稿</span><span class="st st--parsing"><i class="dot"></i>解析中</span><span class="st st--failed"><i class="dot"></i>解析失败</span><span class="st st--proof"><i class="dot"></i>待校对</span><span class="st st--pub"><i class="dot"></i>已发布</span><span class="st st--off"><i class="dot"></i>已下线</span></div></div>'+
+  '<div class="state-cell"><div class="sh">回答类型</div>'+
+    '<div style="display:flex;flex-direction:column;gap:6px;align-items:flex-start">'+
+    '<span class="badge badge--fact"><i></i>有据</span><span class="badge badge--partial"><i></i>部分有据</span><span class="badge badge--refuse"><i></i>拒答</span><span class="badge badge--boundary"><i></i>能力边界</span><span class="badge"><i></i>报告大纲</span></div></div>'+
+  '<div class="state-cell"><div class="sh">引用编号 · 三态</div>'+
+    '<div style="display:flex;gap:8px;align-items:center"><button class="cite-no">1</button><span style="font-size:11.5px;color:var(--ink3)">默认</span>'+
+    '<button class="cite-no" style="background:var(--zhu);color:#fff;border-color:var(--zhu)">2</button><span style="font-size:11.5px;color:var(--ink3)">悬停</span>'+
+    '<span class="cite-no" style="opacity:.35">3</span><span style="font-size:11.5px;color:var(--ink3)">作废</span></div>'+
+    '<p style="font-size:11px;color:var(--ink4);line-height:1.7;margin-top:8px">作废＝引用 id 不在本次片段集，该断言降级为「未核实」</p></div>'+
+  '<div class="state-cell"><div class="sh">空态与提示</div>'+
+    '<div style="font-size:12px;color:var(--ink3);line-height:1.8">空态不写「暂无数据」，写下一步能做什么：<br>「点回答左侧的朱色编号，这里会显示原文。」</div>'+
+    '<div style="margin-top:8px;font-size:11px;color:var(--zhu)">错误态直接说清原因与动作，不道歉</div></div>'+
+  '</div>'+
+
+  '<h2><span class="no">柒</span>适配范围：只做 PC</h2>'+
+  '<p>这个产品的主任务有两个：<b>长文逐段对照校对</b>、<b>逐条核对原文</b>。两者都需要横向空间——左边原文右边润色稿，或者左边结论右边取证。手机上只能读、不能核，做了也是残废功能。所以本期明确<b>只面向桌面浏览器</b>，不为手机与平板竖屏做适配。</p>'+
+  '<table><tr><th>宽度</th><th>布局</th><th>说明</th></tr>'+
+  '<tr><td><b>≥ 1440px</b></td><td>四栏：导航 64／会话 264／正文／取证 344</td><td>主目标。正文与取证同屏，核对不用来回切</td></tr>'+
+  '<tr><td><b>1280–1440px</b></td><td>四栏，取证 308、会话 236</td><td>笔记本最常见宽度，正文仍保 68 字行宽</td></tr>'+
+  '<tr><td><b>1180–1280px</b></td><td>四栏，正文收窄到 620</td><td>仍可双栏核对，只是引用卡变矮</td></tr>'+
+  '<tr><td><b>1024–1180px</b></td><td>取证栏转为右侧浮层，点编号或「取证」滑出</td><td>最低可用宽度。正文优先，核原文多点一次</td></tr>'+
+  '<tr><td><b>&lt; 1024px</b></td><td>不做适配</td><td>窄于此宽度时工具栏会互相挤压，属于不支持范围</td></tr></table>'+
+  '<p>窄屏兜底样式（导航转底栏、表格转卡片）仍保留在代码里，但<b>不作为交付承诺</b>：它们是防止窗口被拖窄时界面崩掉的安全网，不是移动端方案。</p>'+
+  '<p>无障碍基线：所有可点元素有可见焦点环（青色 2px）；状态不只靠颜色，色点旁必有文字；<code>prefers-reduced-motion</code> 下阶段动画与入场动画全部取消；文字对比度按 WCAG AA 校验，朱色只用于 ≥ 14px 或加粗文本。</p>'+
+
+  '<h2><span class="no">捌</span>与需求文档的对应</h2>'+
+  '<table><tr><th>需求编号</th><th>在原型里的位置</th></tr>'+
+  '<tr><td><b>FR-A07 接口层鉴权</b></td><td>切换角色后导航项消失（体验层），说明页明确写出「接口必须独立鉴权」</td></tr>'+
+  '<tr><td><b>FR-B10 润色范围</b></td><td>润色工作台第 4 段的朱色越界警告与「按原文重新生成」</td></tr>'+
+  '<tr><td><b>FR-B11 / B15</b></td><td>逐段确认进度联动发布按钮；发布前 5 项自查清单</td></tr>'+
+  '<tr><td><b>4.3 端到端流程</b></td><td>对话页的阶段点（检索/判定/生成）与摘要行</td></tr>'+
+  '<tr><td><b>4.5 输出契约</b></td><td>五种回答类型的界面形态：有据、部分有据、拒答、能力边界、大纲</td></tr>'+
+  '<tr><td><b>4.7 权限交互</b></td><td>越权提问的拒答话术；取证栏不给未授权语料留任何入口</td></tr>'+
+  '<tr><td><b>4.10 执行轨迹</b></td><td>轨迹页：阶段列表＋瀑布＋入参出参＋判定表＋命中片段（只给 id 与分数）</td></tr>'+
+  '<tr><td><b>FR-E02 / E07</b></td><td>报告大纲确认；单节失败保留其余章节并可重试</td></tr></table>'+
+
+  '<h2><span class="no">玖</span>这份原型没有做的事</h2>'+
+  '<ul>'+
+  '<li>无后端。问答、润色、报告、轨迹全部是脚本化数据，用于验证信息结构与交互节奏，不验证真实检索质量。</li>'+
+  '<li>引文、人名、页码、分数均为排版示例，不是真实史料；正式开发时须以实际县志替换，并保留来源授权说明。</li>'+
+  '<li>未做多用户协作、未做 TOTP、未做 OCR 补录界面——按需求文档 v1.2，这些在 P2 之后。</li>'+
+  '<li>未做深色模式。朱墨体系本身就是浅色纸面逻辑，深色版需要重新定义「朱」的对比度，不宜简单反色。</li>'+
+  '<li>未做移动端，也未做平板竖屏。这是刻意的取舍，理由见第七节：这个产品的核心动作是横向对照，竖屏做不了。</li>'+
+  '</ul>'+
+  '<p style="margin-top:18px;padding-top:14px;border-top:1px solid var(--line);font-size:11.5px;color:var(--ink4);line-height:1.9">原型 v1.0 · 2026-10-29 · 对应《中国县市 AI 智能体 · 需求分析报告 v1.2》第四章 Agent 功能设计与第五章功能拆解。</p>';
+}
+
+/* ---------- 启动 ---------- */
+threadInner.innerHTML=emptyHTML();
+var h=(location.hash||'').replace('#/','');
+if(h&&['chat','reports','corpus','polish','trace','spec'].indexOf(h)>-1){go(h)}else{body.dataset.view='login'}
+})();
+</script>
+</body>
+</html>

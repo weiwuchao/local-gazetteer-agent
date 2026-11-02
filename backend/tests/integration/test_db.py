@@ -49,11 +49,11 @@ def _insert_corpus(queue: db.WriteQueue) -> int:
         ("v1", "d1", "raw", "法门寺在县北二十里。"),
     )
     return queue.insert(
-        "INSERT INTO chunk(chunk_id,doc_id,version_id,region_id,volume,volume_no,seq,"
-        "content,content_seg,volume_seg) VALUES(?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO chunk(chunk_id,doc_id,version_id,region_id,seq,"
+        "content,content_seg) VALUES(?,?,?,?,?,?,?)",
         (
-            "c1", "d1", "v1", "610324", "卷二·建置", 2, 1,
-            "法门寺在县北二十里。", "法门寺 在 县北 二十里", "卷二 建置",
+            "c1", "d1", "v1", "610324", 1,
+            "法门寺在县北二十里。", "法门寺 在 县北 二十里",
         ),
     )
 

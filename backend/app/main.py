@@ -5,8 +5,8 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,7 +18,6 @@ from app.api.routers import (
     chat,
     chunks,
     corpus,
-    eval as eval_router,
     polish,
     regions,
     reports,
@@ -26,16 +25,19 @@ from app.api.routers import (
     tasks,
     traces,
 )
+from app.api.routers import (
+    eval as eval_router,
+)
 from app.core.config import get_settings
 from app.core.logging import setup_logging
-from app.repo import db
+from app.repo import app_config_repo, db
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """启动/停止顺序（骨架，实现见各模块）。
 
-    启动：加载配置 → 迁移 DB → 校验 embedding 维度（D-7 fail fast）
+    启动：加载配置 → 迁移 DB → 写入配置默认值 → 校验 embedding 维度（D-7 fail fast）
           → 预热模型 → 启动 worker 线程 → 注册信号处理
     停止：停止领取新任务 → 等待在途任务/租约释放 → 落盘轨迹 → 关连接
     """
@@ -44,11 +46,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # 迁移必须在写线程/worker 之前完成；停止时先停写线程再退出。
     db.init()
+    app_config_repo.seed_defaults()
     try:
-        # TODO: 校验 embedding 维度 / 预热模型 / workers.worker.start()
         yield
     finally:
-        # TODO: workers.worker.stop()
+        # 停止：关写线程。模型/Chroma 是进程级单例，随进程退出释放。
         db.shutdown()
 
 

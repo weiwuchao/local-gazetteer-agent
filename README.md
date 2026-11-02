@@ -21,8 +21,8 @@ doc/         需求与设计文档
 ```bash
 # 后端（Python 3.11+，单进程是硬约束，见架构 D-1）
 cd backend
-poetry install
-uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1 --reload
+python -m pip install <pkg>    # 依赖清单见 pyproject.toml；解释器用父目录 venv：E:\agent_code\.venv
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1 --reload
 
 # 前端
 cd frontend

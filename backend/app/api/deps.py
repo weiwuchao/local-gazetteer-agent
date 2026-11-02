@@ -25,7 +25,7 @@ async def get_principal(authorization: str | None = Header(default=None)) -> Pri
     raise NotImplementedError
 
 
-async def require_admin(principal: Principal = Depends(get_principal)) -> Principal:
+async def require_admin(principal: Principal = Depends(get_principal)) -> Principal:  # noqa: B008
     if principal.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="admin only")
     return principal

@@ -6,11 +6,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 
-class AnswerType(str, Enum):
+class AnswerType(StrEnum):
     FACT = "fact"
     SUMMARY = "summary"
     COMPARE = "compare"
@@ -18,7 +18,7 @@ class AnswerType(str, Enum):
     CHITCHAT = "chitchat"
 
 
-class Intent(str, Enum):
+class Intent(StrEnum):
     QA = "qa"
     REPORT = "report"
     CHITCHAT = "chitchat"

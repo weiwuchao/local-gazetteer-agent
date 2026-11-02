@@ -1,18 +1,17 @@
-"""工具注册与预算：≤6 次调用、扩检 ≤2 轮、25s 总超时。"""
+"""工具注册与预算：≤6 次调用、25s 总超时。"""
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 
 @dataclass(slots=True)
 class ToolBudget:
     max_calls: int = 6
-    max_expand_rounds: int = 2
     timeout_ms: int = 25_000
     calls: int = 0
-    expand_rounds: int = 0
 
     def consume(self) -> None:
         if self.calls >= self.max_calls:

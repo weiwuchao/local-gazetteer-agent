@@ -6,9 +6,9 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import Awaitable, Callable
 
-from app.agent.contracts import AgentInput, AgentState, AnswerPayload
+from app.agent.contracts import AgentInput, AnswerPayload
 from app.agent.stages import (
     s0_assemble,
     s1_intent,

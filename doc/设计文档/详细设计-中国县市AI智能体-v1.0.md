@@ -26,12 +26,11 @@
 | 校验     | Pydantic                    | v2          | 请求/响应 DTO、`extra='forbid'` 挡掉伪造字段                 | 手写校验必然漏字段                                        |
 | 编排     | LangChain                   | ≥0.2        | `Runnable` 串联 8 阶段、callback 打点、输出解析               | 裸写会重复实现重试/流式/提示词管理                               |
 | 关系库    | SQLite                      | ≥3.40       | 24 张表，WAL                                         | PostgreSQL 多一个运维对象                               |
-| 向量库    | Chroma                      | ≥0.4        | `PersistentClient`，每索引版本一个 collection             | FAISS 无法下推过滤（违反 FR-D04）                          |
+| 向量库    | Chroma                      | ≥0.5        | `PersistentClient`，每索引版本一个 collection             | FAISS 无法下推过滤（违反 FR-D04）；1.x 原生后端在部分 Windows CPU 上会崩溃，见 backend/README |
 | 向量模型   | **bge-m3**                  | revision 锁定 | 1024 维、8192 ctx、本地 CPU，`sentence-transformers` 加载 | 理由与备选见架构文档 1.5；`bge-large-zh-v1.5` 会截断 800 字降级块  |
 | 重排模型   | **bge-reranker-v2-m3**      | revision 锁定 | cross-encoder，20 候选约 150–400ms                    | 关闭 rerank 则阈值语义变为余弦（D-5）                         |
 | 全文检索   | FTS5                        | 内置          | BM25 通路，外部内容表                                     | `LIKE` 无排序、无 BM25                                |
 | 中文处理   | jieba                       | ≥0.42       | 写入侧分词（`cut_for_search`）                           | 不分词则 BM25 对 CJK 完全失效                             |
-| 繁简     | opencc-python-reimplemented | ≥0.1        | 检索侧归一（展示侧保留繁体）                                    | 自建映射表覆盖率不足                                       |
 | 密码     | argon2-cffi                 | ≥23         | argon2id                                          | bcrypt 需 cost≥12 才等效，且 72 字节截断                   |
 | JWT    | PyJWT                       | ≥2.8        | access/refresh 签发校验                               | —                                                |
 | PDF    | PyMuPDF                     | ≥1.24       | 文本层提取 + 逐页字符数判定                                   | pdfplumber 慢、内存高                                 |
@@ -63,7 +62,7 @@
 | 能力                                  | 用在哪                                  | 具体写法                                                                           | 为什么值得用                                         |
 | ----------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------ | ---------------------------------------------- |
 | `BaseChatModel` 适配                  | `llm/factory.py`                     | `init_chat_model(model, model_provider=...)`，配 `with_fallbacks([small_model])` | 换模型只改配置；降级链一行写完                                |
-| `Embeddings` 接口                     | `rag/embeddings.py`                  | 实现 `embed_documents` / `embed_query`，繁转简 + 批 16 + L2 归一 + 指数退避                 | 与 Chroma、检索器解耦；换模型只改这一层与索引版本                   |
+| `Embeddings` 接口                     | `rag/embeddings.py`                  | 实现 `embed_documents` / `embed_query`，原文直喂 + 批 16 + L2 归一                 | 与 Chroma、检索器解耦；换模型只改这一层与索引版本                   |
 | `BaseRetriever`                     | `rag/retrievers/vector.py`、`bm25.py` | 继承并实现 `_get_relevant_documents`，返回 `list[Document]`                            | 两路召回签名一致，才能做 RRF 融合；`Document.metadata` 是天然的载体 |
 | `ChatPromptTemplate`                | `agent/prompts/`                     | Jinja2 模板文件 + `prompt_version` + `sha256`                                      | 变量显式声明，缺变量在构造期就报错                              |
 | `RunnableSequence`                  | `agent/pipeline.py`                  | `s0 \| s1 \| ... \| s7`，每段是 `RunnableLambda`                                   | 8 阶段的数据流一目了然；`.astream()` 天然支持流式               |
@@ -75,11 +74,11 @@
 
 | 不用                                            | 为什么                                                                                                                   |
 | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `AgentExecutor` / `create_tool_calling_agent` | 由模型自主决定调哪个工具、调几次，**预算不可控**。需求要求 ≤6 次调用、≤2 轮扩检、25s 超时，这些在开放式 agent 里只能靠提示词"请求"它遵守。而且轨迹会随模型决策而变形，无法保证 5–9 个 span        |
-| LangGraph                                     | 本期是线性 8 阶段 + 一层"不足则扩检一次"的循环，用状态图属于过度设计。轨迹/回放由自家三表承担，不需要 checkpointer                                                  |
+| `AgentExecutor` / `create_tool_calling_agent` | 由模型自主决定调哪个工具、调几次，**预算不可控**。需求要求 ≤6 次调用、25s 超时，这些在开放式 agent 里只能靠提示词"请求"它遵守。而且轨迹会随模型决策而变形，无法保证 5–9 个 span        |
+| LangGraph                                     | 本期是线性 8 阶段，用状态图属于过度设计。轨迹/回放由自家三表承担，不需要 checkpointer                                                  |
 | `ConversationBufferMemory` 等 Memory 类         | 记忆是三层（近 6–8 轮原文 + ≤300 字摘要 + 记忆槽），且必须落库供审计与"跨会话不串"。Memory 类的生命周期绑在进程内，重启即丢                                            |
 | 用 `VectorStore` 抽象做检索主路径                      | 我们需要"两路召回共用同一 scope + RRF + rerank + 阈值"，`VectorStore` 的 `similarity_search` 表达不了这条链路。Chroma 只用其原生 `collection.query` |
-| `RecursiveCharacterTextSplitter` 做首选分块        | 县志是条目体，按字数硬切会把一条记载拦腰截断。它只作为"三级识别失败"的降级兜底（800 字 + 100 重叠）                                                              |
+| `RecursiveCharacterTextSplitter` 做分块        | 它按长度硬切、不认句末标点。本项目自己实现"先切句、再按 800 字累积、块间重叠 100 字"的切块器，行为可测可控                                                              |
 | `LLMChain` / 旧版 `Chain`                       | 已被 LCEL 取代，混用两套写法会让 pipeline 无法统一 astream                                                                             |
 
 #### 一句话概括
@@ -100,8 +99,8 @@ pydantic-settings = "^2.2"
 
 langchain-core = "^0.2"
 langchain-openai = "^0.1"          # 或其他 provider 适配包，换厂商只换这一行
-chromadb = "^0.4"
-sentence-transformers = "^2.7"     # bge-m3 与 bge-reranker-v2-m3 的加载与推理
+chromadb = ">=0.5.23,<2"
+sentence-transformers = ">=6.0,<7"  # bge-m3 与 bge-reranker-v2-m3 的加载与推理
 torch = "^2.2"                     # CPU 版即可；GPU 可选
 tiktoken = "^0.6"                  # 仅用于 token 估算校准，不在热路径
 
@@ -112,7 +111,6 @@ python-multipart = "^0.0.9"
 pymupdf = "^1.24"
 python-docx = "^1.1"
 jieba = "^0.42"
-opencc-python-reimplemented = "^0.1"
 python-magic = "^0.4"              # MIME 校验
 
 [tool.poetry.group.dev.dependencies]
@@ -256,7 +254,7 @@ can_publish = (pending == 0 && rejected == 0 && 自查清单 7 项全过)
   "direct_answer": "志书中有明确记载的古建筑共 3 处……",
   "explanation": "……",
   "citations": [
-    {"no": 1, "doc": "扶风县志", "volume": "卷二·建置", "chunk_id": "c_10231",
+    {"no": 1, "doc": "扶风县志", "chunk_id": "c_10231",
      "quote": "法门寺在县北二十里……", "supports": "第 1 句：三处记载的数量与方位",
      "page": "p.46", "ocr": false}
   ],
@@ -286,9 +284,9 @@ can_publish = (pending == 0 && rejected == 0 && 自查清单 7 项全过)
 | -- | ---------------------------- | ------------------- | ----------------------------------------------- |
 | 29 | `GET /api/chunks/{chunk_id}` | 引用回链（原文 + ±200 上下文） | 登录；**chunk 所属 doc 必须 ∈ visible_doc_ids，否则 404** |
 
-响应：`{chunk_id, doc, volume, category, page, ocr, quote, before, after, span_start, span_end}`。
+响应：`{chunk_id, doc, page, ocr, quote, before, after, span_start, span_end}`。
 
-**这是取证栏的唯一数据源**。原型里取证栏给"卷次 / 页码 / 片段 id / 提取方式（OCR 或文本层）"，全部来自这里；`before/after` 即"展开上下文 ±200 字"。
+**这是取证栏的唯一数据源**。原型里取证栏给"书名 / 页码 / 片段 id / 提取方式（OCR 或文本层）"，全部来自这里；`before/after` 即"展开上下文 ±200 字"。
 
 #### reports（8）
 
@@ -374,7 +372,7 @@ can_publish = (pending == 0 && rejected == 0 && 自查清单 7 项全过)
 ```json
 {"dataset_key":"qa_50","dataset_version":"v1",
  "config":{"model":"…","prompt_version":"p_v3","index_version":"idx_20261029",
-           "retrieval":{"chunk_size":400,"hybrid":true,"rerank":true,"top_k":20,"threshold":0.62}}}
+           "retrieval":{"chunk_size":800,"hybrid":true,"rerank":true,"top_k":20,"threshold":0.62}}}
 ```
 
 ### 2.3 SSE 协议
@@ -396,11 +394,11 @@ can_publish = (pending == 0 && rejected == 0 && 自查清单 7 项全过)
 | ------------ | -------------------------------------------------------------------------------- | ---------- | -------------------------- | -------------- |
 | `meta`       | `{trace_id, message_id, model, prompt_version, index_version, preview}`          | ≤50ms，首个   | 建消息骨架，badge「检索中」           | 生成中骨架          |
 | `stage`      | `{seq, name, status:'start'\|'ok'\|'degraded'\|'skipped'\|'failed', ms?, note?}` | 每阶段首尾各一次   | 阶段点动画（3–4 个点）              | `.stages` 阶段序列 |
-| `citation`   | `{no, chunk_id, doc, volume, quote, supports, page, ocr}`                        | 5a 完成后     | 渲染引用卡 + 页边编号               | `cite-card` 组  |
+| `citation`   | `{no, chunk_id, doc, quote, supports, page, ocr}`                               | 5a 完成后     | 渲染引用卡 + 页边编号               | `cite-card` 组  |
 | `delta`      | `{text}`                                                                         | 5b 逐 token | 追加正文                       | 流式渲染           |
 | `caveat`     | `{text, kind:'conflict'\|'suspicion'}`                                           | 冲突/存疑      | 常驻提示条                      | 朱框「两说并存」       |
 | `correction` | `{action:'drop_claim'\|'downgrade', text, reason_code}`                          | 阶段 6 降级    | 该句标「未核实」                   | 编号 `is-void` 态 |
-| `refuse`     | `{reason, hint, nearby:[{volume,text,score}]}`                                   | 拒答分支       | 切拒答样式 + 相近原文               | `nearby` 卡     |
+| `refuse`     | `{reason, hint, nearby:[{text, score}]}`                                          | 拒答分支       | 切拒答样式 + 相近原文               | `nearby` 卡     |
 | `usage`      | `{token_in, token_out, elapsed_ms}`                                              | 生成结束       | 仅埋点，不展示                    | 摘要行耗时          |
 | `done`       | `{answer_type, confidence, message_id, ttft_ms, total_ms, followups[]}`          | 必发         | 解锁输入、渲染追问                  | 反馈条 + 追问       |
 | `resync`     | `{message_id}`                                                                   | 重放缓冲过期     | 改拉 `GET /messages/{id}` 全量 | —              |
@@ -466,8 +464,8 @@ can_publish = (pending == 0 && rejected == 0 && 自查清单 7 项全过)
 | 0   | `auth` 鉴权与装配    | `AgentInput`（含 scope） | 校验通过的 `AgentState`                       | 30ms                   | scope 为空 → `refuse(permission)`，不空跑 | `scope_size, region_id, preview`    |
 | 1   | `intent` 意图判定   | 问题、记忆槽                | `qa/report/chitchat/write_request` + 置信度 | 100ms（规则）/900ms（含 LLM） | 未命中规则 → 与 s2 合并一次 LLM               | `intent, conf, path=rule\|llm`      |
 | 2   | `rewrite` 查询改写  | 原问题、近 4 轮、记忆槽         | 独立 query + 改写理由                          | 800ms                  | 失败用原问题 + 提示                         | `q_before_len, q_after, changed`    |
-| 3   | `retrieve` 检索   | query、scope           | 片段集（5–8 条，含元数据）                          | 900ms                  | 向量路失败 → 纯 BM25；全空 → 拒答分支            | `rounds, hits, top1`                |
-| 4   | `judge` 充分性判定   | 片段集、阈值                | `sufficient/insufficient` + 原因码          | 50ms                   | 不足 → 扩检 1 轮 → 仍不足拒答                 | `top1, threshold, hits, categories` |
+| 3   | `retrieve` 检索   | query、scope           | 片段集（5–8 条，含元数据）                          | 900ms                  | 向量路失败 → 纯 BM25；全空 → 拒答分支            | `hits, top1`                        |
+| 4   | `judge` 充分性判定   | 片段集、阈值                | `sufficient/insufficient` + 原因码          | 50ms                   | 分数低于阈值 → 拒答                 | `top1, threshold, hits` |
 | 5   | `generate` 生成   | 片段集、约束提示              | 引证档 + 白话解读（流式）                           | TTFT 2.5s              | 超 25s 中断保留已生成                       | `claims, citations, ttft_ms`        |
 | 6   | `validate` 输出校验 | 草稿、片段集                | 终稿或降级稿                                   | 150ms                  | 删断言 / 改 `refuse` / 标未核实             | `checks[], dropped, downgraded`     |
 | 7   | `deliver` 交付    | 终稿                    | 10 字段 payload + `done`                   | —                      | 断流可重放                               | `events, bytes`                     |
@@ -582,38 +580,25 @@ def s1_intent(c: AgentState) -> AgentState:
 def s3_retrieve(c: AgentState) -> AgentState:
     with stage("retrieve", seq=3, budget_ms=900) as span:
         q = c.rewritten or c.input.question
-        round_no, category = 1, c.infer_category()   # 首轮带类目，二轮去掉
-        hits = []
-        while round_no <= 2:
-            # 本函数整体运行在检索线程池里（pipeline.py），
-            # 内部 t1 的 embed_query / rerank 是同步 CPU 调用，无需再 to_thread（4.7.6）
-            res = t1_hybrid_search(q=q, scope=c.scope, category=category,
-                                   top_k=c.budget.top_k, span=span)
-            hits = res.hits
-            span.event("tool_call", tool_name="hybrid_search",
-                       params_digest=f"q={q} region={c.scope.region_id} "
-                                     f"top_k={c.budget.top_k} category={category}",
-                       result_count=len(hits), top_score=res.top1,
-                       detail={"hit_chunk_ids": res.top10, "round": round_no})
-            if res.top1 >= c.threshold or round_no == 2 or not category:
-                break
-            round_no, category = 2, None      # 放宽：去掉类目限制（DR-08）
-            span.status = "degraded"
-
+        # 本函数整体运行在检索线程池里（pipeline.py），
+        # 内部 t1 的 embed_query / rerank 是同步 CPU 调用，无需再 to_thread（4.7.6）
+        res = t1_hybrid_search(q=q, scope=c.scope, top_k=c.budget.top_k, span=span)
+        hits = res.hits
+        span.event("tool_call", tool_name="hybrid_search",
+                   params_digest=f"q={q} region={c.scope.region_id} top_k={c.budget.top_k}",
+                   result_count=len(hits), top_score=res.top1,
+                   detail={"hit_chunk_ids": res.top10})
         if not hits:
             raise RefuseStage("no_hit")
 
         expanded = t2_context_expand([h.chunk_id for h in hits[:5]], window=200, span=span)
-        c.hits, c.rounds = expanded, round_no
+        c.hits = expanded
         c.top1 = max(h.score for h in hits)
-        span.digest(input=f"q={q[:60]}", output=f"rounds={round_no} hits={len(hits)} top1={c.top1:.2f}")
+        span.digest(input=f"q={q[:60]}", output=f"hits={len(hits)} top1={c.top1:.2f}")
         return c
 ```
 
-**两个刻意的设计**
-
-1. **首轮带类目，二轮去掉**：类目由问题中的关键词粗判（"寺观"→祠祀，"进士"→选举）。带上类目能提高精度，但也会漏召回；所以二轮放宽是"扩大再失败才拒答"，而不是"一次失败就拒答"。
-2. **T2 只对前 5 条做扩展**：±200 字扩展会让上下文体积翻倍。只扩展最可能要引用的前 5 条，是为了在 900ms 预算内保住"引用原文完整"这个更重要的目标。
+**刻意的设计**：T2 只对前 5 条做扩展。±200 字扩展会让上下文体积翻倍；只扩展最可能要引用的前 5 条，是为了在 900ms 预算内保住"引用原文完整"这个更重要的目标。
 
 ### 3.6 阶段 4：充分性判定
 
@@ -623,21 +608,19 @@ def s4_judge(c: AgentState) -> AgentState:
         checks = [
             ("top1_score", c.top1, c.threshold, c.top1 >= c.threshold, "low_score"),
             ("hit_count",   len(c.hits), 2,      len(c.hits) >= 2,      "too_few"),
-            ("rounds_used", c.rounds, 2,         c.rounds <= 2,         "max_round"),
-            ("category_cov", c.category_count, 1, c.category_count >= 1, "no_category"),
         ]
         failed = [c3 for c3 in checks if not c3[3]]
         span.event("validation", decision="insufficient" if failed else "sufficient",
                    detail={"checks": [_as_dict(x) for x in checks]})
-        if c.top1 < c.threshold and c.rounds >= 2:
+        if c.top1 < c.threshold:
             raise RefuseStage("low_score", nearby=c.hits[:3])   # DR-09
         return c
 ```
 
-判定结论**不只看分数**。原型轨迹页那张判定表就是这个函数的输出（`判定项 / 阈值 / 实际 / 结论 / 原因码`），四个维度缺一不可：
+判定结论**不只看分数**。原型轨迹页那张判定表就是这个函数的输出（`判定项 / 阈值 / 实际 / 结论 / 原因码`），两个维度都要记录：
 
 - 只有分数高但命中 1 条 → 可能是"撞上一条恰好相似的片段"，不足以支撑多句断言；
-- 分数中等但命中 9 条且跨 3 个类目 → 往往可以回答，只是措辞要保守（转 `partial`）。
+- 分数中等但命中 9 条 → 往往可以回答，只是措辞要保守（转 `partial`）。
 
 ### 3.7 阶段 5：生成（两通道）
 
@@ -751,7 +734,7 @@ def s7_deliver(c: AgentState) -> AnswerPayload:
 # 但同步 SDK 在该线程内阻塞是安全的——事件循环不在这个线程上。
 
 # T1 混合检索
-def t1_hybrid_search(*, q: str, scope: SearchScope, category: str | None,
+def t1_hybrid_search(*, q: str, scope: SearchScope,
                      top_k: int, span: Span) -> RetrievalResult: ...
 
 # T2 上下文扩展
@@ -799,7 +782,7 @@ scope 为空 ──────────────────────�
 意图=问答
   ├ 改写失败 ────────────────────────────→ 用原问题 + 提示（DR-06）
   ├ 检索 0 命中 ─────────────────────────→ refuse(no_hit) + 2~3 条相近
-  ├ 分数不足 → 扩检 → 仍不足 ────────────→ refuse(low_score) + 相近 + 换问法
+  ├ 分数不足 ────────────────────────────→ refuse(low_score) + 相近 + 换问法
   ├ 片段冲突 ────────────────────────────→ fact/partial + caveat「两说并存」
   ├ 片段含传闻 ──────────────────────────→ 加「志载（存疑）」标记（DR-11）
   ├ 要求评价 ────────────────────────────→ 只呈现记载 + 说明不作评价（DR-12）
@@ -861,7 +844,7 @@ class VectorRetriever(BaseRetriever):
             {"index_version": {"$eq": self.scope.index_version}},
         ]}
         res = self.collection.query(
-            query_embeddings=[self.embed.embed_query(query)],   # query 侧在 Embeddings 内部转简（4.7.2）
+            query_embeddings=[self.embed.embed_query(query)],   # query 侧原文直喂，不做转换（4.7.2）
             n_results=self.k, where=where,
             include=["metadatas", "distances", "documents"])
         return [
@@ -900,15 +883,14 @@ class FtsRetriever(BaseRetriever):
         match = build_match_expr(tokens)             # 见 4.3.2
         ph = ",".join("?" * len(self.scope.visible_doc_ids))
         sql = f"""
-          SELECT c.chunk_id, c.content, c.volume, c.volume_no, c.category, c.doc_id,
-                 c.char_start, c.char_end,
-                 -bm25(chunk_fts, 1.0, 2.0, 1.5) AS score
+          SELECT c.chunk_id, c.content, c.doc_id, c.char_start, c.char_end,
+                 -bm25(chunk_fts) AS score
           FROM chunk_fts JOIN chunk c ON c.id = chunk_fts.rowid
           WHERE chunk_fts MATCH ?
             AND c.region_id = ?
             AND c.doc_id IN ({ph})
             AND c.is_searchable = 1
-          ORDER BY bm25(chunk_fts, 1.0, 2.0, 1.5)
+          ORDER BY bm25(chunk_fts)
           LIMIT ?"""
         rows = self.conn.execute(sql, (match, self.scope.region_id,
                                        *self.scope.visible_doc_ids, self.k)).fetchall()
@@ -924,13 +906,10 @@ FTS5 的 `unicode61` 分词器把 CJK 字符当作**连续 token**——"法门�
 写入侧：
 
 ```python
-content_seg  = " ".join(jieba.cut_for_search(to_simplified(content)))
-volume_seg   = " ".join(jieba.cut_for_search(volume or ""))
-category_seg = " ".join(jieba.cut_for_search(category or ""))
-# 注意：volume_seg/category_seg 必须单独分词，否则"卷二·建置"被当作一个 token
+content_seg = " ".join(jieba.cut_for_search(content))
 ```
 
-查询侧同样处理，且**繁简归一必须在分词前**做（否则"縣"匹配不到简体索引）。
+查询侧同样处理：**写入与查询必须用同一套分词**（都用原字，不做繁简归一），否则同一句话两侧切法不同、无法互相命中。
 
 #### 4.3.2 MATCH 表达式的三级回退
 
@@ -979,8 +958,7 @@ def hybrid_search(q: str, scope: SearchScope, *, k=20, rrf_k=60,
         top1=cand[0]["final_score"] if cand else 0.0,
         all_scores=[c["final_score"] for c in cand],
         top10=[{"chunk_id": c["chunk_id"], "score": round(c["final_score"], 3)}
-               for c in cand[:10]],
-        rounds=1)
+               for c in cand[:10]])
 ```
 
 #### RRF 的量纲必须写进注释
@@ -996,7 +974,7 @@ rrf_k = 60 时：
 
 这条注释要写在代码里，不是只写在文档里——它是本项目最容易被误改的一处。
 
-`normalize_for_rerank()` 的边界也要写清：**它只做空白压缩与全角半角归一，不做繁简转换。** 理由有两条：cross-encoder 本身对繁简都能处理；而擅自转简会引入一次可能的错字（"乾"→"干"、"著"→"着"），让打分基于一个纸本上不存在的字符串。向量化侧之所以要转简（4.7.2），是因为 embedding 模型对繁体的覆盖明显弱于简体，两者的取舍不同，不能套用同一条规则。
+`normalize_for_rerank()` 的边界也要写清：**它只做空白压缩与全角半角归一，不做任何转换。** 理由是 cross-encoder 对原字处理得足够好，而擅自转简会引入一次可能的错字（"乾"→"干"、"著"→"着"），让打分基于一个纸本上不存在的字符串。本项目的向量化侧同样不做繁简转换（4.7.2），两侧规则一致。
 
 ### 4.5 上下文扩展 ±200 字
 
@@ -1013,7 +991,7 @@ def expand(hit: Hit, window: int = 200) -> ExpandedHit:
         after=hit.doc_text[hit.char_end:end],
         span_start=hit.char_start - start,
         span_end=hit.char_end - start,
-        volume=hit.volume, page=hit.page, ocr=hit.ocr_flag)
+        page=hit.page, ocr=hit.ocr_flag)
 ```
 
 **为什么存 `char_start/char_end` 而不是运行时用 `content.find(quote)`**：分块时已经知道精确偏移，运行时再找会遇到"同一段话在文中出现两次"的歧义。偏移是入索引时算好的事实，不是运行时猜的结果。
@@ -1021,39 +999,38 @@ def expand(hit: Hit, window: int = 200) -> ExpandedHit:
 ### 4.6 入库侧：分块与索引
 
 ```
-① 三级识别（rag/segmenter.py）
-   卷：^卷[一二三四五六七八九十百]+
-   类目：^（建置|祠祀|选举|艺文|金石|人物|灾异|物产|赋役|...）
-   条目：类目下的短标题行
-   识别成功 → 按条目切分，单块 200–500 字
+① 切句（rag/chunking.py）
+   在句末标点（。！？!?；;…）与换行处切句，紧随的右引号/右括号归入前句
+   单句超过 chunk_size 时按长度硬切（兜底）
 
-② 降级（识别失败）
-   按空行切段 → 累积到 800 字切块 → 保留 100 字重叠
-   记 segment_strategy='fallback'，供 P0 评估分块质量
+② 累积成块
+   顺序累积到不超过 chunk_size（默认 800）就落一块
+   下一块从上一块结尾回退 overlap（默认 100）字开始，避免跨块句子被切断
+   重叠不得把单块撑过 chunk_size：必要时放弃重叠
 
 ③ 每块生成
-   content（原字原文，繁体保留）
-   content_seg（繁→简 + jieba 空格分词）
-   volume_seg / category_seg
+   content（原字原文，不转简）
+   content_seg（原文 + jieba 空格分词）
    char_start / char_end（在 version.content 中的偏移）
    token_count（汉字数 + 非汉字/4，入库时算好，组装上下文时直接求和）
+   参数走 app_config：index.chunk_size（800）、index.chunk_overlap（100）
 
 ④ 向量化（doc_embed 任务）
    调用 embeddings.embed_documents([r.content ...])
-     └─ 内部把 content 经 opencc t2s 变成"简体、不分词"再编码（4.7.2）
-     └─ 调用方不要自己转简，否则重复一次且容易与 query 侧不一致
+     └─ 内部不做任何文本转换，原文直喂（4.7.2）
+     └─ 调用方不要自己分词或转简，否则两侧字面空间不一致
    批 16（CPU；GPU 可 64）→ bge-m3.encode(normalize_embeddings=True)
    → chroma.upsert(
        ids=[chunk_id],
        embeddings=[vec],
-       documents=[content],              ← 存原文繁体，取证栏据此逐字核对
-       metadatas=[{chunk_id, doc_id, region_id, volume_no, index_version, ocr_flag}])
+       documents=[content],              ← 与向量输入同一个字符串，取证栏据此逐字核对
+       metadatas=[{chunk_id, doc_id, region_id, index_version, ocr_flag}])
    注意 1：metadatas 不放"是否已发布"——状态只由 SQL 决定（架构文档 D-6）
    注意 2：documents 与"向量化输入"是两个不同的字符串，见 4.7.2
    注意 3：失败只把 index_state 置 'stale'，不回滚已建的分块，也不阻塞 proofreading
 ```
 
-**为什么向量化输入不是 `content_seg`**：`content_seg` 是"繁→简 + jieba 空格分词"，空格是给 FTS5 用的；喂给 bge-m3 会把句子切成碎片，注意力被打散。也不是 `content`（繁体原字），因为评测集与用户提问都是简体，字面空间不一致会拉低召回。所以需要一个中间产物 `content_sim`——**它不落库**，向量化时现算（4.7.2 说明为什么可以偷这个懒）。
+**为什么向量化输入不是 `content_seg`**：`content_seg` 里是 jieba 加的空格，那是给 FTS5 用的；喂给 bge-m3 会把句子切成碎片，注意力被打散。本项目不做繁简转换，向量化直接吃 `content`（原字），query 侧同样是原字，两侧字面天然一致，不需要中间产物。
 
 
 ### 4.7 向量化与重排实现
@@ -1074,9 +1051,9 @@ class EmbeddingFingerprint:
     revision: str       # HF commit hash，不是 "main"
     dim: int            # 1024
 
-    def index_version(self, chunk_size: int, opencc_ver: str) -> str:
+    def index_version(self, chunk_size: int) -> str:
         slug = self.model.split("/")[-1].replace("-", "").replace(".", "")
-        return f"idx__{slug}__{self.dim}__c{chunk_size}__o{opencc_ver}__v1"
+        return f"idx__{slug}__{self.dim}__c{chunk_size}__v1"
 
 
 class RagModels:
@@ -1104,7 +1081,7 @@ class RagModels:
 
 ```python
 # app/main.py 的 lifespan 里
-fp_dim = models.embedder.get_sentence_embedding_dimension()
+fp_dim = models.embedder.get_embedding_dimension()
 assert fp_dim == models.fp.dim, (
     f"配置 dim={models.fp.dim} 与模型实际 {fp_dim} 不一致；"
     f"改配置前请按 4.7.5 重建索引")
@@ -1114,53 +1091,47 @@ if probe["embeddings"] and len(probe["embeddings"][0]) != models.fp.dim:
     raise RuntimeError("collection 维度与当前模型不一致，拒绝启动（架构 D-7）")
 ```
 
+**依赖/模型缺失时的启动行为（不降级）**：`chromadb`、`torch`、`sentence-transformers` 或权重
+没装好时，入库/检索链路**直接失败**并抛出 `RagUnavailable`（异常文本只给一句原因，修复办法看
+`backend/README.md`）；服务本身仍可启动，但要到第一次用到向量时才报错。维度不一致同样直接
+拒绝（上面第二个校验）。不实现"降级纯 BM25"这类兜底路径——本项目只练 agent 核心。
+
 #### 4.7.2 三个文本口径，一个字都不能混
 
-这是本节最容易出错的地方。同一个 chunk 在系统里有**三个不同的字符串用途**，任何一处写串都会静默降低召回或让引文对不上纸本：
+这是本节最容易出错的地方。同一个 chunk 在系统里有**两个不同的字符串用途**，写串会静默降低召回或让引文对不上纸本：
 
 | 口径 | 内容 | 用在哪 | 落库 |
 |---|---|---|---|
-| `content` | 原字原文，繁体，未分词 | ① Chroma 的 `documents` ② 取证栏引文 ③ 输出校验的引用快照 | ✓ `chunk.content` |
-| `content_seg` | 繁→简 **+ jieba 空格** | 仅 FTS5 的 BM25 索引 | ✓ `chunk.content_seg` |
-| `content_sim` | 繁→简，**不分词** | 仅向量化输入（含 query 侧） | ✗ 现算 |
+| `content` | 原字原文，不转简、未分词 | ① Chroma 的 `documents` ② 取证栏引文 ③ 输出校验的引用快照 | ✓ `chunk.content` |
+| `content_seg` | 原文 **+ jieba 空格** | 仅 FTS5 的 BM25 索引 | ✓ `chunk.content_seg` |
+
+不做繁简转换，因此也没有 `content_sim` 这个派生口径——向量化直接吃 `content`。
 
 ```python
 # rag/embeddings.py
-import opencc
 from langchain_core.embeddings import Embeddings
 
 class BgeM3Embeddings(Embeddings):
-    """LangChain Embeddings 适配层：只做归一化与批处理，不做任何文本变换以外的逻辑"""
-    def __init__(self, models: RagModels, cfg):
-        self.m = models
-        self.batch = int(cfg["llm.embedding.batch_size"])
-        self.q_instr = cfg["llm.embedding.query_instruction"]  # bge-m3 为空串
-        self._t2s = opencc.OpenCC("t2s")                       # 进程内复用，构造一次即可
-
-    def _sim(self, text: str) -> str:
-        return self._t2s.convert(text)          # 只转简，不分词
+    """只做批处理与 L2 归一，不改写文本"""
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         vecs = self.m.embedder.encode(
-            [self._sim(t) for t in texts],
+            list(texts),                          # 原字原文，不转简、不分词
             batch_size=self.batch,
-            normalize_embeddings=True,           # L2 归一 → 余弦 = 内积
+            normalize_embeddings=True,            # L2 归一 → 余弦 = 内积
             show_progress_bar=False)
         return vecs.tolist()
 
     def embed_query(self, text: str) -> list[float]:
-        # query 侧同样走简体，保证与文档侧同一字面空间
-        payload = (self.q_instr + text) if self.q_instr else self._sim(text)
-        v = self.m.embedder.encode([self._sim(payload)],
-                                   normalize_embeddings=True)[0]
+        payload = (self.q_instr + text) if self.q_instr else text
+        v = self.m.embedder.encode([payload], normalize_embeddings=True)[0]
         return v.tolist()
 ```
 
-三个细节的理由：
+两个细节的理由：
 
 1. **`query_instruction` 必须走配置。** bge-m3 不需要它，但 `bge-large-zh-v1.5` 需要"为这个句子生成表示以用于检索相关文章："前缀，且**只加在 query 侧、不加在 document 侧**。硬编码在代码里的后果是：某次重构把两侧合并成一个方法，召回率下降 5–10 个点，而线上无任何报错、无任何告警。
 2. **`normalize_embeddings=True` 必须在两侧同时开。** Chroma 用 `hnsw:space=cosine`；若只归一化文档侧，两侧范数不同，余弦计算仍正确但内积语义错位，而 `1 - distance` 的换算会偏。
-3. **`opencc.OpenCC("t2s")` 是进程级对象，不要每次调用都构造。** 它要加载字典，构造开销约 10ms，放在热路径上是白扔钱。
 
 #### 4.7.3 批量、超时与失败
 
@@ -1191,7 +1162,7 @@ def handle_doc_embed(task):
 ```
 
 - **可中断续跑**：任务不保存"处理到第几条"，而靠 `chunk.index_state='pending'` 反查。进程被杀后重启，任务重新入队，已 `indexed` 的不会被重复处理。这比在任务里记游标更抗崩溃。
-- **失败不阻塞润色**：`document.status` 由解析成功决定（`proofreading`），与索引成功无关。索引没完成时，预览模式降级为纯 BM25，并在文档详情标注"向量索引未就绪"（架构 4.3 已定）。
+- **失败不阻塞润色**：`document.status` 由解析成功决定（`proofreading`），与索引成功无关。索引失败**不降级**（不实现纯 BM25 兜底），失败片段标 `stale`，重跑入库补齐。
 - **超时**：单批 30s 上限；整体任务走 `limits.task_timeout_ms`，超时后任务置 `failed` 但已索引的 chunk 保留。
 - **不要为了"跑满 CPU"开多线程编码**：PyTorch 自身已用 `torch.set_num_threads`；再叠一层线程池会与 worker 线程争抢，反而更慢。调 `torch.set_num_threads(物理核数 - 1)`，留一个核给 API 进程。
 
@@ -1338,9 +1309,9 @@ c = await loop.run_in_executor(RETRIEVAL_POOL, s3_retrieve, c)
 
 ### G-9 FTS5 中文分词的三处细节
 
-**做法**：① 入库时 `content_seg/volume_seg/category_seg` 三列都要预分词；② 查询侧同样 `to_simplified` + `cut_for_search`；③ 繁简归一**在分词前**；④ 展示永远用 `chunk.content`（原字原文）。
+**做法**：① 入库时 `content_seg` 一列预分词；② 查询侧同样 `cut_for_search`；③ 不做繁简归一（原文即检索字面）；④ 展示永远用 `chunk.content`（原字原文）。
 
-**为什么**：`unicode61` 不切 CJK；不单独分词 `volume_seg`，"卷二·建置"会被当作一个 token，按卷次检索失效；先分词后繁简归一会导致"縣"与"县"无法互相命中。
+**为什么**：`unicode61` 不切 CJK；写入与查询两侧分词器必须完全一致，否则同一句话两侧切法不同、无法互相命中。
 
 **验证**：20 条专名问题（"法门寺""王锡嘏"）BM25 单路 recall@5 ≥70%；与"不预分词"基线对比应为 0；繁体查询"縣"能命中简体索引。
 
@@ -1372,7 +1343,7 @@ c = await loop.run_in_executor(RETRIEVAL_POOL, s3_retrieve, c)
 
 这一条是把架构 D-5、D-7 的落地风险集中起来，因为它们共同的特征是**不报错、不掉线、只是结果变差**，比崩溃难查一个数量级。
 
-**陷阱一：向量化输入用错了字符串。** `content`（繁体）与 `content_seg`（带空格）都能跑通，`encode()` 不会报错，但召回率会掉。**做法**：向量化入口只接受 `content_sim`，函数签名为 `embed_documents(texts: list[str])` 且在 docstring 里写死"入参必须是简体不分词文本"；`documents=` 单独传 `content`。**验证**：拿一条已知繁体 chunk，断言 `collection.get(ids=[cid])["documents"][0] == chunk.content`（不是简体），且 `embed_documents([简体])` 与库中向量余弦 ≈ 1.0。
+**陷阱一：向量化输入用错了字符串。** `content`（原字）与 `content_seg`（带空格）都能跑通，`encode()` 不会报错，但召回率会掉。**做法**：向量化入口只接受 `content`，函数签名为 `embed_documents(texts: list[str])` 且在 docstring 里写死"入参必须是原文、不分词、不转简"；`documents=` 传同一个 `content`。**验证**：拿一条已知 chunk，断言 `collection.get(ids=[cid])["documents"][0] == chunk.content`，且重复 `embed_documents([content])` 与库中向量余弦 ≈ 1.0。
 
 **陷阱二：rerank 的 logits 没过 sigmoid。** `final_score` 会是 −4.7 之类的负数，与 `0.62` 比较永远"不足"，系统对所有问题**稳定拒答**，而日志显示"分数低于阈值"，完全合理。**做法**：`rerank()` 内部统一 `1/(1+exp(-logit))`，并在 `agent_span.detail` 里同时记 `logit` 与 `prob` 两个字段以自证。**验证**：单测喂一个已知高度相关的 query-passage 对，断言 `0 < final_score < 1`；再断言关闭 rerank 时 `final_score == 余弦 ∈ [−1,1]`，两者不可混。
 
@@ -1449,11 +1420,11 @@ ChatView
 ├── SessionList          会话分组（今天/昨天）、软删
 ├── Thread
 │   ├── QuestionBlock    左侧 2px 青线、右下圆角、"第 N 轮 · 单轮未触发改写"
-│   ├── StageTrail       3–4 个阶段点 → 完成后收成一行摘要（召回/采用/扩检/耗时）
+│   ├── StageTrail       3–4 个阶段点 → 完成后收成一行摘要（召回/采用/耗时）
 │   ├── SseAnswer
 │   │   ├── PreviewBar      仅 preview 时，橙条 + 退出按钮
 │   │   ├── ClaimParagraph  42px 页边 + 堆叠编号（一条断言多个出处时竖向排列）
-│   │   ├── CiteCard[]      卷次 · 书名 + 两行截断 + "支持：第 1 句…"
+│   │   ├── CiteCard[]      书名 · 片段 + 两行截断 + "支持：第 1 句…"
 │   │   └── FeedbackBar     有用/有误/整理成报告
 │   └── Composer          Enter 发送 / Shift+Enter 换行 / 计数 N/2000
 └── EvidencePanel         常驻，非弹层：tab [1][2]… + 原文（宋体）+ 元数据 + ±200 展开
@@ -1626,7 +1597,7 @@ export async function streamChat(body: ChatRequest, onEvent: (e: SseEvent) => vo
 | FR-A07 数据归属 | service 层 | 21,26,27,34 | conversation, report |
 | FR-A08 操作留痕 | 各 service | — | operation_log |
 | FR-B01~B04 上传/提取 | corpus_service + worker | 9 | document, task |
-| FR-B05 分段 | rag/segmenter | 9（异步内） | chunk |
+| FR-B05 切块 | rag/chunking | 9（异步内） | chunk |
 | FR-B06 乱码校验 | worker | 9 | document（parse_failed） |
 | FR-B07 异步任务 | task_service | 54 | task |
 | FR-B08 去重 | corpus_service | 9 | document.dup_key |
@@ -1713,20 +1684,23 @@ export async function streamChat(body: ChatRequest, onEvent: (e: SseEvent) => vo
 |---|---|---|
 | `llm.chat.model` | 待定 | 主模型，换它需重标阈值 |
 | `llm.chat.fallback_model` | 待定 | 限流/超时降级目标 |
-| `llm.embedding.model` | `BAAI/bge-m3` | 向量模型；换它必须新建 collection + 全量 reindex（D-7、4.7.5） |
-| `llm.embedding.revision` | HF commit hash | 锁死权重；留空则启动即报错 |
+| `llm.embedding.model` | `BAAI/bge-m3`（也可填本地目录） | 向量模型；换它必须新建 collection + 全量 reindex（D-7、4.7.5） |
+| `llm.embedding.revision` | HF commit hash | 锁死权重；留空则启动即报错（填本地目录时可为空） |
 | `llm.embedding.dim` | 1024 | 与 collection 实际维度比对，不一致拒绝启动 |
 | `llm.embedding.query_instruction` | `""` | bge-m3 为空；换 bge-large-zh-v1.5 时必须填其检索指令（只加 query 侧） |
 | `llm.embedding.batch_size` | 16 | CPU 16 / GPU 64 |
 | `llm.embedding.device` | `cpu` | `cuda` 可选 |
 | `llm.embedding.cache_dir` | `data/models` | 配合 `HF_HUB_OFFLINE=1` 离线加载 |
+| `llm.embedding.auto_download` | true | 首次使用自动下载；失败时打印手动下载地址与命令 |
 | `llm.rerank.model` | `BAAI/bge-reranker-v2-m3` | `none` 时阈值语义变为余弦；输出须过 sigmoid（4.7.4） |
 | `retrieval.top_k_vec` | 20 | 向量路召回数 |
 | `retrieval.top_k_bm25` | 20 | 全文路召回数 |
 | `retrieval.rerank_top_n` | 8 | 送生成的上限 |
 | `retrieval.score_threshold` | 0.62 | **只作用于 rerank 分**（D-5） |
 | `retrieval.rrf_k` | 60 | 融合平滑 |
-| `index.active_version` | — | 当前 collection 版本 |
+| `index.active_version` | 空（按指纹自动计算） | 当前 collection 版本；切换版本只改这一项 |
+| `index.chunk_size` | 800 | 每块目标字数（按长度切块）；改动等于换索引版本 |
+| `index.chunk_overlap` | 100 | 相邻块的重叠字数 |
 | `prompt.qa.version` | `p_v3` | 引证档/解读模板 |
 | `limits.context_tokens` | 8192 | 上下文预算 |
 | `limits.daily_token_budget` | 待定 | 日限额 |
@@ -1756,7 +1730,7 @@ export async function streamChat(body: ChatRequest, onEvent: (e: SseEvent) => vo
 | 1 | 登录 + 2 角色 | user 访问 `/api/admin/**` 全部 403 |
 | 2 | 上传 → 解析 → 分段 | 50MB / 500 页 ≤8 分钟；无文本层页被显式标记 |
 | 3 | 单轮问答 | TTFT P95 ≤3s（P1 门槛，C-03）；答案含引用卡片 |
-| 4 | 引用可定位 | 点编号能取到原文 + 卷次 + 页码 + 片段 id |
+| 4 | 引用可定位 | 点编号能取到原文 + 页码 + 片段 id |
 | 5 | 拒答 | 无答案问题返回 `refuse` + 2~3 条相近原文，不编造 |
 | 6 | 越权拦截 | **AT-01~06 全部通过，拦截率 100%**（非 100% 阻断上线） |
 | 7 | 轨迹覆盖 | 100% 请求产生 ≥5 个 span（含拒答/越权；快速失败路径单独统计，C-09 注） |

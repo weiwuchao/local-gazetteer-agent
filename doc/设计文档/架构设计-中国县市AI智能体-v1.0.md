@@ -32,7 +32,7 @@
 
 - 权限相关决策 → 需求 4.7、FR-A05~A07、越权用例 AT-01~06
 - Agent 相关决策 → 需求第 4 章（4.1 职责、4.2 工具、4.3 流程、4.10 轨迹）
-- 数据模型 → 需求 9.1 ER、9.2 表清单，原型"取证栏"字段（卷次/页码/片段 id）
+- 数据模型 → 需求 9.1 ER、9.2 表清单，原型"取证栏"字段（书名/页码/片段 id）
 - 页面与角色可见性 → 原型 `data-nav`、`data-admin` 的实际行为
 - 接口粒度 → 原型上真实存在的按钮与动作（53 个端点不是凭空设计的，可逐个对到界面动作）
 
@@ -85,7 +85,7 @@
 | ASGI 服务器 | uvicorn | ≥0.29 | 单进程即可，`--workers 1` 是硬要求 | gunicorn 多 worker（会破坏 4 个组件，见 D-1） |
 | Agent 编排 | LangChain（LCEL） | ≥0.2 | `Runnable` 组合 + callback 打点 + 输出解析器，正好覆盖 8 阶段所需 | LangGraph（本期是线性流程 + 单层重试，状态图收益为负）；AgentExecutor（不确定性太高，无法保证预算与可复现） |
 | 关系库 | SQLite | ≥3.40 | 单文件、可整库备份、FTS5 内置、`json1` 可用 | PostgreSQL（多一个要运维的服务，学习收益低）；MySQL（同上） |
-| 向量库 | Chroma（PersistentClient） | ≥0.4 | 独立于 SQLite 的专用向量存储；`where` 支持 `$and/$in`，能把权限过滤下推 | FAISS（过滤只能取回后做，违反约束 3）；内存 numpy（重启即丢） |
+| 向量库 | Chroma（PersistentClient） | ≥0.5（1.x 的 Windows 原生后端在部分 CPU 上会崩溃，见 backend/README） | 独立于 SQLite 的专用向量存储；`where` 支持 `$and/$in`，能把权限过滤下推 | FAISS（过滤只能取回后做，违反约束 3）；内存 numpy（重启即丢） |
 | 全文检索 | SQLite FTS5 + jieba | FTS5 内置 | 与关系库同事务，语料下线可与 `is_searchable` 同时生效 | Elasticsearch（重）；纯 `LIKE`（无 BM25 排序） |
 | 向量模型 | **BAAI/bge-m3**（本地） | revision 锁定 | 1024 维、8192 token 上下文、中文与繁体鲁棒、与 rerank 同家族（D-7） | 见 1.5 对比表：`bge-large-zh-v1.5`（512 token 会截断降级块）、商用 API（按量计费且不可离线） |
 | 重排模型 | **BAAI/bge-reranker-v2-m3**（本地） | revision 锁定 | cross-encoder，输出 0–1 相关度，与 bge-m3 同家族、分数分布一致 | `bge-reranker-base`（效果弱一档）；关闭 rerank（阈值语义变为余弦，D-5） |
@@ -172,9 +172,9 @@ Chroma 里也存了 `region_id`、`doc_id` 等元数据，但**不能**用它判
    → 换模型（哪怕同为 1024 维，语义空间也变了）不能原地重算，
      必须新建 collection：chunks__{index_version}
 2) index_version 的命名必须编码模型指纹，例如
-   idx__bgem3__1024__c400__o1.1.9__v1
-   （模型 / 维度 / 切块大小 / opencc 版本 / 修订号）
-3) 换模型 → 全量 reindex（10 万 chunk 约 35–60 分钟）
+   idx__bgem3__1024__c400__v1
+   （模型 / 维度 / 切块大小）
+3) 换模型 → 全量重新入库（删库重灌）
         → 切 index.active_version
         → 重标 retrieval.score_threshold（分数分布变了）
 ```
@@ -203,7 +203,7 @@ Chroma 里也存了 `region_id`、`doc_id` 等元数据，但**不能**用它判
 
 **为什么是 bge-m3，五条按重要性排序：**
 
-1. **8192 token 上下文能让 800 字降级块不被截断。** 分块策略里有一条降级路径（三级识别失败时累积到 800 字切块，见 4.3 链路二）。800 汉字在中文 BPE 下约 800–1100 token，**`bge-large-zh-v1.5` 的 512 token 上限会静默丢弃后半段**——不报错、不告警，只是那半段永远检索不到。这是最硬的理由，也是这类问题最典型的形态：索引看起来建成了，召回却总是缺一块。
+1. **8192 token 上下文能让 800 字块不被截断。** 切块按长度累积到 800 字（见 4.3 链路二）。800 汉字在中文 BPE 下约 800–1100 token，**`bge-large-zh-v1.5` 的 512 token 上限会静默丢弃后半段**——不报错、不告警，只是那半段永远检索不到。这是最硬的理由，也是这类问题最典型的形态：索引看起来建成了，召回却总是缺一块。
 2. **对繁体与半文言语料更鲁棒。** 县志正文本字多为繁体，且句式偏文言。bge-m3 的多语训练覆盖繁体，`bge-large-zh-v1.5` 主要面向简体现代汉语。
 3. **与 rerank 同家族，分数分布只需标定一次。** 混用不同家族（如 bge-m3 + Cohere rerank）时，`score_threshold` 的 0.62 只对某一组分布成立，换一个就得重标（D-5）。
 4. **不需要 query instruction。** bge 系列中文小模型要求 query 侧加"为这个句子生成表示以用于检索相关文章："，passage 侧不加。这种**查询/文档不对称**最容易在改代码时被破坏——某次重构把 query 和 document 走了同一个方法，召回率会掉而线上无任何报错。bge-m3 天然对称，消掉一个隐雷。
@@ -211,17 +211,16 @@ Chroma 里也存了 `region_id`、`doc_id` 等元数据，但**不能**用它判
 
 **向量化的输入文本是什么：这一条最容易写错。**
 
-chunk 表里有两个文本列，**都不能直接用**：
+chunk 表里有两个文本列，用途不同：
 
 | 列 | 内容 | 能否作向量化输入 | 原因 |
 |---|---|---|---|
-| `content` | 原字原文（繁体、未分词） | 否 | 繁体覆盖弱于简体，且与评测集（简体提问）存在字面鸿沟 |
-| `content_seg` | 繁→简 **+ jieba 空格分词** | 否 | 空格会破坏句子结构，bge-m3 的注意力被切碎 |
-| **`content_sim`**（派生，不落库） | **仅繁→简，不分词** | **是** | 与评测集同一字符空间，且保留完整句法 |
+| `content` | 原字原文（不转简、未分词） | **是** | 向量化直接用原文；本项目不做繁简转换，query 与 document 天然同一字面空间 |
+| `content_seg` | 原文 **+ jieba 空格分词** | 否 | 空格会破坏句子结构，bge-m3 的注意力被切碎 |
 
-`content_sim` 由 `opencc.t2s(content)` 实时生成，**不写入表**。理由是它是确定性纯函数，落库会让 chunk 表出现第 5 个文本列（单县 200 万字语料下多占约 6MB 并放大 FTS 触发器），而排查时一行代码即可重现。代价是 opencc 版本会影响转换结果，因此 **opencc 版本必须进 `index_version` 指纹**（D-7 第 2 条），否则升级 opencc 会静默改变全部向量输入。
+不再有 `content_sim` 这个派生口径：繁简转换被整体移除（不引入 opencc），所以也不存在"转换版本变化导致向量输入漂移"的问题，`index_version` 只需要记录模型、维度与块大小。
 
-另有一处必须分开记：**Chroma 的 `documents` 存 `content`（原文繁体），不存 `content_sim`。** 向量化的输入是简体，但召回后要展示、要能"逐字核对原文"的是繁体原文。若图省事把 `documents` 写成简体，取证栏的引文就会与纸本对不上——这恰好破坏了整个产品最核心的"可核对"承诺。
+另有一处必须记住：**Chroma 的 `documents` 存 `content`**，与向量输入是同一个字符串。召回后展示与"逐字核对原文"用的都是它，不会出现两套文本对不上的情况。
 
 **明确不用的能力（同样是设计）：**
 
@@ -241,7 +240,7 @@ chunk 表里有两个文本列，**都不能直接用**：
 **实验 E7（并入需求文档 8.4 的六组实验，成为第七组）：**
 
 ```
-固定项：分块策略、chunk_size=400、rerank=bge-reranker-v2-m3、top_k=20、50 题评测集
+固定项：分块策略、chunk_size=800、rerank=bge-reranker-v2-m3、top_k=20、50 题评测集
 变量：  仅 embedding 模型（bge-m3 / bge-large-zh-v1.5 / 商用 API 一家）
 记录：  Recall@5、MRR@10、nDCG@10、索引总耗时、单查询编码延迟、磁盘占用、¥成本
 判据：  Recall@5 差距 < 3 个百分点时，选索引成本更低者；
@@ -258,7 +257,7 @@ chunk 表里有两个文本列，**都不能直接用**：
 | 单查询编码延迟 | 约 60–150ms（CPU） | 占检索阶段 800ms 预算的 8–19%，可接受；GPU 下 <20ms |
 | 换模型成本 | 全量 reindex + 重标阈值，约半天 | 由 D-7 的 fail-fast 与指纹机制保证"换得干净" |
 
-最后一句提醒写在这里，避免日后被当成"过度设计"删掉：**这套选型里真正不可让步的只有三件事**——维度与 collection 绑定、`content_sim` 与 `documents` 分离、opencc 版本进指纹。模型本身可以换，这三条换不掉。
+最后一句提醒写在这里，避免日后被当成"过度设计"删掉：**这套选型里真正不可让步的只有两件事**——维度与 collection 绑定、`index_version` 指纹（模型 / 维度 / 块大小）进 collection 名。模型本身可以换，这两条换不掉；繁简转换不在其中（本项目不做）。
 
 ---
 
@@ -431,7 +430,7 @@ backend/
     agent/
       pipeline.py            # 8 阶段 Runnable 串联 + 预算 + 异常兜底
       contracts.py           # AgentInput / AgentState / AnswerPayload / Refusal / AnswerType
-      registry.py            # 工具注册与预算（≤6 次、扩检 ≤2 轮、25s）
+      registry.py            # 工具注册与预算（≤6 次、25s）
       budget.py              # 上下文 token 预算分配与截断
       trace.py               # TraceCollector、@stage 装饰器、digest 生成、体积截断
       stages/s0_assemble.py ... s7_deliver.py
@@ -439,10 +438,11 @@ backend/
       guards/{injection,banned,numbers,citation_check}.py
       prompts/               # 模板文件 + registry（版本号 + sha256，不存原文）
     rag/
-      normalizer.py          # 繁→简、全半角、去控制符、标点归一
-      segmenter.py           # 卷/类目/条目三级识别，降级 800 字 + 100 重叠
-      chunking.py            # 切块 + content_seg/volume_seg/category_seg
+      normalizer.py          # 全半角、空白/控制符归一、jieba 预分词（不做繁简）
+      chunking.py            # 按长度切块（句末标点优先、块间重叠）+ content_seg
       embeddings.py          # bge-m3 适配（批 16、L2 归一、维度与 revision 校验）
+      models.py              # RagModels 单例、模型指纹、预热、维度校验
+      diagnostics.py         # RagUnavailable + 可选依赖导入（缺依赖直接失败，不降级）
       chroma_store.py        # PersistentClient、collection 版本命名、where 构造
       fts_store.py           # FTS5 查询构造（jieba、AND/OR 回退、bm25 归一）
       indexer.py             # upsert / delete_by_doc / reconcile / rebuild
@@ -460,6 +460,8 @@ backend/
     files/{doc_id}/raw.pdf   # 不在 Web 根、0600
     exports/{report_id}/{ulid}.docx
     app.db  chroma/
+  scripts/
+    ingest_corpus.py         # 语料素材 → 分块 → 向量库（md/txt/pdf/docx，不降级）
   tests/{unit,integration,e2e,evals}/
 ```
 
@@ -484,7 +486,7 @@ backend/
 | 需求模块 | 主要落点 | 关键 FR |
 |---|---|---|
 | **A 账号与权限** | `auth_service`、`api/deps.py`、`core/security.py` | FR-A01~A08、AT-01~06 |
-| **B 语料上传与润色** | `corpus_service`、`polish_service`、`workers/handlers/doc_parse` / `polish_document`、`rag/segmenter` / `chunking` | FR-B01~B15 |
+| **B 语料上传与润色** | `corpus_service`、`polish_service`、`workers/handlers/doc_parse` / `polish_document`、`rag/chunking` | FR-B01~B15 |
 | **C 会话与记忆** | `chat_service`、`routers/sessions.py`、`agent/stages/s2`、`handlers/conv_summarize` | FR-C01~C08 |
 | **D 知识与检索** | `rag/*`、`routers/chunks.py`、`agent/tools/t1_hybrid_search.py` 与 `t2_context_expand.py` | FR-D01~D08 |
 | **E 报告与导出** | `report_service`、`handlers/report_*`、`core/filestore` | FR-E01~E08 |
@@ -562,7 +564,7 @@ backend/
 | 断点 | 行为 |
 |---|---|
 | 检索 0 命中 | `refuse(no_hit)` + 2~3 条最相近原文（不送模型） |
-| 分数低于阈值 | 扩检 1 轮 → 仍不足 → `refuse(low_score)` |
+| 分数低于阈值 | `refuse(low_score)`，附 2~3 条最相近原文 |
 | LLM 超 25s | 中断生成，保留已生成，`status=partial`，`answer_type=partial` |
 | 引用校验失败 | 删断言；主体不成立 → `refuse(validation)`；部分成立 → `partial` + caveat |
 | 上游限流 | 重试 1 次 → 降级小模型 → 仍失败提示稍后（降级矩阵） |
@@ -583,24 +585,24 @@ worker[doc_parse]（≤8 分钟 / 500 页）
   document: draft → parsing
   1) 子进程提取：逐页取文本层；页字符数 < 阈值 → 记 no_text_pages（不静默跳过）
   2) 乱码率 > 0.5% → parse_failed(EX-05)
-  3) normalizer：繁简映射（保留原字对照）、全半角、去控制符
-  4) segmenter：卷/类目/条目三级；失败降级 800 字 + 100 重叠
-  5) chunking：INSERT chunk（content 原字原文 + content_seg 分词 + char_start/end）
+  3) normalizer：全半角、去控制符（不做繁简转换）
+  4) chunking：按句末标点切句后累积，每 800 字一块、块间重叠 100 字
+  5) INSERT chunk（content 原字原文 + content_seg 分词 + char_start/end）
      → chunk_fts 触发器自动同步
   6) document: parsing → proofreading，写 page_count / no_text_pages / chunk_count
   7) enqueue(doc_embed, idem 含 index_version)
 
 worker[doc_embed]
-  批 16 → opencc.t2s(content) → bge-m3 → L2 归一 → chroma.upsert(
-      ids=chunk_id, documents=[content],        # ← 存原文，不是简体（1.5）
+  批 16 → content（原字，不转简）→ bge-m3 → L2 归一 → chroma.upsert(
+      ids=chunk_id, documents=[content],        # ← 与向量输入同一个字符串
       metadata{doc_id,region_id,index_version})
-  成功 → chunk.index_state='indexed'；失败 → 退避重试 ≤3 → 仍失败标 'stale' + 告警
+  成功 → chunk.index_state='indexed'；失败 → 标记 'stale'（不降级、不重试）
 ```
 
 **两个刻意的顺序设计**
 
 1. **先落盘再写库**：文件写成功才 INSERT `document`，写库失败删文件。反过来会产生"库里有记录、文件不存在"的坏数据，且无法自动修复。
-2. **向量化失败不阻塞待校对**：`proofreading` 状态由解析成功决定，不由索引成功决定。此时预览模式会降级为纯 BM25，并在文档详情里标注——比卡住整个流程更符合"先能用再完美"。
+2. **向量化失败直接报错**：`proofreading` 状态由解析成功决定，不由索引成功决定；但索引失败不降级（本项目不实现纯 BM25 兜底），失败片段标 `stale`，重跑入库即可补齐。
 
 ### 4.4 链路三：报告大纲 → 逐节成文 → 导出
 
@@ -623,7 +625,7 @@ worker[report_generate]（总预算 180s，节数 ≤6）
 
 POST /api/reports/{id}/sections/{seq}/retry  → 单节任务（不影响其他节）
 POST /api/reports/{id}/exports {fmt}         → enqueue(report_export)
-   · 引用汇总：合并各节 citations → 去重(doc_id, volume) → 按(title, volume_no) 排序 → 重编号
+   · 引用汇总：合并各节 citations → 去重(doc_id, chunk_id) → 按(title, 首次出现顺序) 排序 → 重编号
    · 正文 [n] 重映射 → Markdown 直出 / python-docx
    · INSERT export_artifact(token, expires_at=+24h)
 GET  /api/exports/{token}                    → 校验令牌 + 未过期 + 归属 → 文件流（filename*=UTF-8''）
@@ -755,15 +757,14 @@ END;
 
 | 列 | 用途 | 为什么需要 |
 |---|---|---|
-| `content` | 原字原文（可含繁体） | 引用展示必须与纸本一致，繁体不能替换 |
-| `content_seg` | 繁→简 + jieba 空格分词 | FTS5 的 `unicode61` 不切 CJK，不预分词等于 BM25 全废 |
-| `volume_seg` / `category_seg` | 卷次、类目的分词列 | 否则"卷二·建置"被当作一个 token，按卷次检索失效 |
+| `content` | 原字原文（可含繁体） | 引用展示必须与纸本一致，任何转换都会让引文对不上 |
+| `content_seg` | 原文 + jieba 空格分词 | FTS5 的 `unicode61` 不切 CJK，不预分词等于 BM25 全废 |
 | `char_start` / `char_end` | 在原文中的偏移 | ±200 字上下文扩展不能靠"前后各取 200 个字符"猜，必须按原文切片 |
 | `is_searchable` | 是否参与检索 | 下线时与 `document.status` 同事务置 0，立即生效 |
 | `index_state` | pending / indexed / stale | 区分"还没向量化"与"向量化了但过期"，用于 reconcile |
 | `id INTEGER PRIMARY KEY` | FTS5 `content_rowid` | 外部内容表必须有一个稳定整型 rowid |
 
-**分块策略**：首选按"卷/类目/条目"语义切分，单块 200–500 字；条目超长按段落再切（800 字 + 100 重叠）。固定长度切分只作为降级兜底，不作为首选——县志是条目体，按字数硬切会把一条记载拦腰截断，而这条记载往往正是答案所在。
+**分块策略**：只按长度切分——句末标点优先切句，累积到 800 字成一块，相邻块重叠 100 字；单句超过 800 字时按长度硬切。不做"卷/类目/条目"结构识别（本项目不实现语义分段）。
 
 #### 5.4.4 `polish_segment` —— 两套状态机不能混用
 
@@ -834,17 +835,16 @@ Chroma 不在 SQLite 里，但它同样需要"版本"概念，否则新旧索引
 
 ```
 collection 名 = "chunks__" + index_version
-index_version = idx__{model}__{dim}__{chunk_size}__{opencc}__{rev}
-例            = idx__bgem3__1024__c400__o1.1.9__v1
+index_version = idx__{model}__{dim}__{chunk_size}__v1
+例            = idx__bgem3__1024__c400__v1
 ```
 
-四个字段缺一不可：`model`/`dim` 变了 → 向量空间变了；`chunk_size` 变了 → 分块边界变了（同一段文字会切在不同位置）；`opencc` 变了 → 向量化输入的字面变了（1.5）。
+三个字段缺一不可：`model`/`dim` 变了 → 向量空间变了；`chunk_size` 变了 → 分块边界变了（同一段文字会切在不同位置）。
 
 | 操作 | 是否新建 collection | 代价 |
 |---|---|---|
-| 换 embedding 模型或维度 | **必须** | 全量 reindex（10 万 chunk 约 1–3 小时）+ 重标阈值 |
-| 换 chunk_size 或分块策略 | **必须** | 全量重新分块 + reindex，且 `chunk` 表要重写 |
-| 升级 opencc | **必须** | 同上（转换结果可能变） |
+| 换 embedding 模型或维度 | **必须** | 全量重新入库（删库重灌）|
+| 换 chunk_size 或分块策略 | **必须** | 全量重新分块 + 重新入库，且 `chunk` 表要重写 |
 | 换 rerank 模型 | 不需要 | rerank 不参与建索引，只重标 `score_threshold` |
 | 改 chunk 内容（润色后重发布） | 不需要 | 按 `chunk_id` `upsert`，旧向量被覆盖 |
 | 下线文档 | 不需要 | 只把 `is_searchable` 置 0（Chroma 异步清理，D-6 第 5 步） |
@@ -887,18 +887,22 @@ index_version = idx__{model}__{dim}__{chunk_size}__{opencc}__{rev}
 |---|---|---|---|
 | `llm.chat.model` | string | 待定（AS-02） | 主模型 |
 | `llm.chat.fallback_model` | string | 待定 | 限流/超时降级 |
-| `llm.embedding.model` | string | `BAAI/bge-m3` | 向量模型（D-7）；换它必须新建 collection 并全量 reindex |
-| `llm.embedding.revision` | string | HF commit hash | 锁死权重版本，否则上游更新会静默改变向量 |
+| `llm.embedding.model` | string | `BAAI/bge-m3`（也可填本地模型目录） | 向量模型（D-7）；换它必须新建 collection 并全量 reindex |
+| `llm.embedding.revision` | string | HF commit hash | 锁死权重版本，否则上游更新会静默改变向量；填本地目录时可为空 |
 | `llm.embedding.dim` | int | 1024 | 启动时与 collection 实际维度比对，不一致拒绝启动 |
 | `llm.embedding.query_instruction` | string | `""`（bge-m3 不需要） | 换 `bge-large-zh-v1.5` 时须填入其检索指令，**不得硬编码在代码里** |
 | `llm.embedding.batch_size` | int | 16（CPU）/ 64（GPU） | 与内存占用、吞吐相关 |
 | `llm.embedding.device` | string | `cpu` | `cuda` 可选；影响索引耗时与查询延迟 |
+| `llm.embedding.cache_dir` | string | `data/models` | 权重缓存目录；配合 `HF_HUB_OFFLINE=1` 离线加载 |
+| `llm.embedding.auto_download` | bool | true | 首次使用是否自动下载权重；失败时打印手动下载地址 |
 | `llm.rerank.model` | string | `BAAI/bge-reranker-v2-m3` | 可为 `none`（关闭 rerank，阈值语义变为余弦，D-5） |
 | `retrieval.top_k_vec` / `top_k_bm25` | int | 20 / 20 | FR-D03 |
 | `retrieval.rerank_top_n` | int | 8 | 送生成的片段数上限 |
 | `retrieval.score_threshold` | float | 0.62（待标定） | **只作用于 rerank 分**（D-5） |
 | `retrieval.rrf_k` | int | 60 | RRF 平滑常数 |
-| `index.active_version` | string | `idx__bgem3__1024__c400__o1.1.9__v1` | 当前生效的索引版本，编码模型/维度/块大小/opencc 版本（D-7） |
+| `index.active_version` | string | 空（按模型指纹自动计算） | 当前生效的索引版本，编码模型/维度/块大小（D-7）；切换版本只改这一项 |
+| `index.chunk_size` | int | 800 | 每块目标字数（按长度切块）；改动等于换索引版本 |
+| `index.chunk_overlap` | int | 100 | 相邻块的重叠字数 |
 | `prompt.qa.version` / `prompt.outline.version` | string | `p_v3` / `p_v2` | 只存版本号 + 模板 hash |
 | `limits.context_tokens` | int | 8192 | FR-C05 |
 | `limits.daily_token_budget` | int | 待定 | FR-S03 日限额 |
@@ -1051,114 +1055,123 @@ EX-xx  →  { http_status, error_code(字符串), retryable, user_message_key }
 ## 附录 A 完整 DDL
 
 > 执行顺序即文件顺序；全部语句幂等（`IF NOT EXISTS`）。`PRAGMA journal_mode=WAL` 等连接级设置不写在迁移里。
+> 每张表与每个字段都带 `--` 注释；本附录与 `backend/app/repo/migrations/0001_init.sql` 逐行一致，改一处必须同步另一处。
 
 ```sql
 -- ============ 0001_init.sql ============
 PRAGMA foreign_keys = ON;
 
 -- ---------- A 账号与权限 ----------
+
+-- 账号：登录凭据、角色、JWT 版本号与登录失败锁定
 CREATE TABLE IF NOT EXISTS user (
-  id             TEXT PRIMARY KEY,
-  username       TEXT NOT NULL,
-  password_hash  TEXT NOT NULL,
-  role           TEXT NOT NULL CHECK (role IN ('admin','user')),
-  status         TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','disabled')),
-  email          TEXT,
-  token_version  INTEGER NOT NULL DEFAULT 1,
-  fail_count     INTEGER NOT NULL DEFAULT 0,
-  locked_until   TEXT,
-  last_login_at  TEXT,
-  created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  updated_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  deleted_at     TEXT
+  id             TEXT PRIMARY KEY,                                            -- 主键，ULID（u_ 前缀）
+  username       TEXT NOT NULL,                                                -- 登录名；软删后允许重建同名
+  password_hash  TEXT NOT NULL,                                                -- argon2id 哈希，不存明文
+  role           TEXT NOT NULL CHECK (role IN ('admin','user')),               -- 角色：admin 管理员 / user 普通用户
+  status         TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','disabled')),  -- 账号状态：active 可用 / disabled 停用
+  email          TEXT,                                                         -- 邮箱，仅用于通知，不是登录凭据
+  token_version  INTEGER NOT NULL DEFAULT 1,                                   -- JWT 版本号；改密/踢下线时 +1，令旧 token 立即失效
+  fail_count     INTEGER NOT NULL DEFAULT 0,                                   -- 连续登录失败次数，达到阈值锁号
+  locked_until   TEXT,                                                         -- 锁定到期时间；NULL 表示未锁定
+  last_login_at  TEXT,                                                         -- 最近一次登录成功时间
+  created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),  -- 创建时间（UTC 毫秒）
+  updated_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),  -- 更新时间（UTC 毫秒）
+  deleted_at     TEXT                                                          -- 软删时间；NULL 表示有效
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ux_user_name ON user(username) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS ix_user_role ON user(role, status);
 
+-- 刷新令牌：按"令牌族"轮换，检测到重放时整族吊销
 CREATE TABLE IF NOT EXISTS auth_refresh_token (
-  id             TEXT PRIMARY KEY,
-  user_id        TEXT NOT NULL REFERENCES user(id),
-  token_hash     TEXT NOT NULL,
-  family_id      TEXT NOT NULL,
-  parent_id      TEXT,
-  user_agent_hash TEXT,
-  ip_hash        TEXT,
-  issued_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  expires_at     TEXT NOT NULL,
-  revoked_at     TEXT,
-  revoked_reason TEXT CHECK (revoked_reason IN ('logout','rotate','admin','reuse'))
+  id             TEXT PRIMARY KEY,                                            -- 主键，ULID
+  user_id        TEXT NOT NULL REFERENCES user(id),                            -- 归属用户 → user.id
+  token_hash     TEXT NOT NULL,                                               -- 刷新令牌的 sha256，库内不存明文
+  family_id      TEXT NOT NULL,                                               -- 令牌族 ID；一次登录一个族，重放时整族吊销
+  parent_id      TEXT,                                                        -- 轮换前的令牌 ID，串成链便于追查
+  user_agent_hash TEXT,                                                       -- UA 哈希，仅用于异常登录识别
+  ip_hash        TEXT,                                                        -- 客户端 IP 哈希，脱敏存储
+  issued_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),  -- 签发时间
+  expires_at     TEXT NOT NULL,                                               -- 过期时间
+  revoked_at     TEXT,                                                        -- 吊销时间；NULL 表示未吊销
+  revoked_reason TEXT CHECK (revoked_reason IN ('logout','rotate','admin','reuse'))  -- 吊销原因：logout 登出 / rotate 轮换 / admin 管理员踢出 / reuse 重放检测
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ux_token_hash ON auth_refresh_token(token_hash);
 CREATE INDEX IF NOT EXISTS ix_token_user ON auth_refresh_token(user_id, expires_at DESC);
 CREATE INDEX IF NOT EXISTS ix_token_family ON auth_refresh_token(family_id);
 
+-- 邀请码：内测准入，带次数上限与过期时间
 CREATE TABLE IF NOT EXISTS invite_code (
-  code        TEXT PRIMARY KEY,
-  note        TEXT,
-  max_uses    INTEGER NOT NULL DEFAULT 1,
-  used_count  INTEGER NOT NULL DEFAULT 0 CHECK (used_count <= max_uses),
-  expires_at  TEXT,
-  enabled     INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0,1)),
-  created_by  TEXT,
-  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  code        TEXT PRIMARY KEY,                                               -- 邀请码本身
+  note        TEXT,                                                           -- 备注，如"发给谁"
+  max_uses    INTEGER NOT NULL DEFAULT 1,                                     -- 最大可用次数
+  used_count  INTEGER NOT NULL DEFAULT 0 CHECK (used_count <= max_uses),       -- 已用次数，不得超过 max_uses
+  expires_at  TEXT,                                                           -- 过期时间；NULL 表示不过期
+  enabled     INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0,1)),             -- 是否启用：1 启用 / 0 停用
+  created_by  TEXT,                                                           -- 创建人 → user.id
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))     -- 创建时间
 );
 CREATE INDEX IF NOT EXISTS ix_invite_enabled ON invite_code(enabled, expires_at);
 
 -- ---------- B 区域与语料 ----------
+
+-- 县市：内容的维度，不是租户隔离维度
 CREATE TABLE IF NOT EXISTS region (
-  id          TEXT PRIMARY KEY,
-  name        TEXT NOT NULL,
-  short_name  TEXT,
-  province    TEXT,
-  city        TEXT,
-  aliases_json TEXT CHECK (aliases_json IS NULL OR json_valid(aliases_json)),
-  era_note    TEXT,
-  status      TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','hidden')),
-  sort_order  INTEGER NOT NULL DEFAULT 0,
-  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  id          TEXT PRIMARY KEY,                                               -- 主键，rg_ 前缀
+  name        TEXT NOT NULL,                                                  -- 县市全名，全局唯一
+  short_name  TEXT,                                                           -- 简称，用于文案与列表
+  province    TEXT,                                                           -- 所属省
+  city        TEXT,                                                           -- 所属地级市
+  aliases_json TEXT CHECK (aliases_json IS NULL OR json_valid(aliases_json)),  -- 历史别名数组（JSON），用于问句里的别名识别
+  era_note    TEXT,                                                           -- 默认年代口径说明，如"以 1992 年版为准"
+  status      TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','hidden')),  -- active 对用户可见 / hidden 隐藏
+  sort_order  INTEGER NOT NULL DEFAULT 0,                                     -- 列表排序值，越小越靠前
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))     -- 创建时间
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ux_region_name ON region(name);
 
+-- 语料主表：文档状态机、发布就绪度、当前检索版本的载体
 CREATE TABLE IF NOT EXISTS document (
-  id                    TEXT PRIMARY KEY,
-  region_id             TEXT NOT NULL REFERENCES region(id),
-  title                 TEXT NOT NULL,
-  edition               TEXT,
-  year_text             TEXT,
-  year_num              INTEGER,
-  source_note           TEXT NOT NULL,
+  id                    TEXT PRIMARY KEY,                                     -- 主键，ULID
+  region_id             TEXT NOT NULL REFERENCES region(id),                  -- 所属县市 → region.id
+  title                 TEXT NOT NULL,                                        -- 书名，如"扶风县志"
+  edition               TEXT,                                                 -- 版本说明，如"陕西人民出版社1992年版"，参与去重
+  year_text             TEXT,                                                 -- 成书年代原文，如"民国二十二年"
+  year_num              INTEGER,                                              -- 成书年份数字，用于排序与筛选
+  source_note           TEXT NOT NULL,                                        -- 来源说明（何处获得、何种扫描件），必填
   status                TEXT NOT NULL CHECK (status IN
-                          ('draft','parsing','parse_failed','proofreading','published','offline')),
-  version               INTEGER NOT NULL DEFAULT 1,
-  page_count            INTEGER,
-  no_text_pages         INTEGER NOT NULL DEFAULT 0,
-  chunk_count           INTEGER NOT NULL DEFAULT 0,
-  searchable_version_id TEXT REFERENCES document_version(id),
-  active_index_version  TEXT,
-  dup_key               TEXT NOT NULL,
-  published_at          TEXT,
-  publish_checklist_json TEXT CHECK (publish_checklist_json IS NULL OR json_valid(publish_checklist_json)),
-  created_by            TEXT NOT NULL,
-  created_at            TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  updated_at            TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  deleted_at            TEXT
+                          ('draft','parsing','parse_failed','proofreading','published','offline')),  -- 状态机：draft 草稿 / parsing 解析中 / parse_failed 解析失败 / proofreading 校对中 / published 已发布 / offline 已下线
+  version               INTEGER NOT NULL DEFAULT 1,                           -- 乐观锁版本号；并发改元数据时后提交者拿 409
+  page_count            INTEGER,                                              -- 总页数
+  no_text_pages         INTEGER NOT NULL DEFAULT 0,                           -- 无文本层页数（扫描件未 OCR），不静默跳过
+  chunk_count           INTEGER NOT NULL DEFAULT 0,                           -- 片段数，冗余计数以免列表页 count(*)
+  searchable_version_id TEXT REFERENCES document_version(id),                 -- 当前参与检索的版本；下线时置 NULL（与 is_searchable=0 同事务）
+  active_index_version  TEXT,                                                 -- 当前生效的索引版本（命名里已编码模型指纹）
+  dup_key               TEXT NOT NULL,                                        -- sha256(region_id+title+edition)，配部分唯一索引防重复上传
+  published_at          TEXT,                                                 -- 发布时间
+  publish_checklist_json TEXT CHECK (publish_checklist_json IS NULL OR json_valid(publish_checklist_json)),  -- 发布时 7 项勾选的快照（JSON）
+  created_by            TEXT NOT NULL,                                        -- 上传人 → user.id
+  created_at            TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),  -- 创建时间
+  updated_at            TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),  -- 更新时间
+  deleted_at            TEXT                                                  -- 软删时间；NULL 表示有效
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ux_doc_dup ON document(region_id, dup_key) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS ix_doc_list ON document(status, region_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS ix_doc_search ON document(region_id, status) WHERE deleted_at IS NULL;
 
+-- 文档版本：raw 原文 / polished 润色稿 / published 发布快照，原文只读
 CREATE TABLE IF NOT EXISTS document_version (
-  id            TEXT PRIMARY KEY,
-  doc_id        TEXT NOT NULL REFERENCES document(id),
-  version_type  TEXT NOT NULL CHECK (version_type IN ('raw','polished','published')),
-  content       TEXT NOT NULL,
-  source_version_id TEXT REFERENCES document_version(id),
-  model         TEXT,
-  prompt_version TEXT,
-  stats_json    TEXT CHECK (stats_json IS NULL OR json_valid(stats_json)),
-  publish_checklist_json TEXT CHECK (publish_checklist_json IS NULL OR json_valid(publish_checklist_json)),
-  created_by    TEXT,
-  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  id            TEXT PRIMARY KEY,                                             -- 主键，ULID
+  doc_id        TEXT NOT NULL REFERENCES document(id),                        -- 所属文档 → document.id
+  version_type  TEXT NOT NULL CHECK (version_type IN ('raw','polished','published')),  -- 版本类型：raw 原始提取 / polished 润色稿 / published 发布快照
+  content       TEXT NOT NULL,                                                -- 该版本全文
+  source_version_id TEXT REFERENCES document_version(id),                     -- 派生来源版本；润色稿指向对应 raw
+  model         TEXT,                                                         -- 生成该版本所用模型
+  prompt_version TEXT,                                                        -- 生成该版本所用 prompt 版本
+  stats_json    TEXT CHECK (stats_json IS NULL OR json_valid(stats_json)),     -- 段数/字数/确认数/AI 采纳率等统计（JSON）
+  publish_checklist_json TEXT CHECK (publish_checklist_json IS NULL OR json_valid(publish_checklist_json)),  -- 发布清单快照，仅 published 版本有值
+  created_by    TEXT,                                                         -- 创建人 → user.id
+  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))   -- 创建时间
 );
 CREATE INDEX IF NOT EXISTS ix_ver_doc ON document_version(doc_id, version_type, created_at DESC);
 
@@ -1170,29 +1183,25 @@ BEGIN
   SELECT RAISE(ABORT, 'raw version is immutable');
 END;
 
+-- 片段：检索最小单元；一张表同时供关键词、向量、引用三种用途
 CREATE TABLE IF NOT EXISTS chunk (
-  id            INTEGER PRIMARY KEY,
-  chunk_id      TEXT NOT NULL,
-  doc_id        TEXT NOT NULL REFERENCES document(id),
-  version_id    TEXT NOT NULL REFERENCES document_version(id),
-  region_id     TEXT NOT NULL,
-  volume        TEXT,
-  volume_no     INTEGER,
-  category      TEXT,
-  seq           INTEGER NOT NULL,
-  char_start    INTEGER,
-  char_end      INTEGER,
-  content       TEXT NOT NULL,
-  content_seg   TEXT NOT NULL,
-  volume_seg    TEXT,
-  category_seg  TEXT,
-  token_count   INTEGER NOT NULL DEFAULT 0,
-  ocr_flag      INTEGER NOT NULL DEFAULT 0 CHECK (ocr_flag IN (0,1)),
-  sensitive_flag INTEGER NOT NULL DEFAULT 0 CHECK (sensitive_flag IN (0,1)),
-  is_searchable INTEGER NOT NULL DEFAULT 1 CHECK (is_searchable IN (0,1)),
-  index_version TEXT,
-  index_state   TEXT NOT NULL DEFAULT 'pending' CHECK (index_state IN ('pending','indexed','stale')),
-  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  id            INTEGER PRIMARY KEY,                                          -- 主键，同时是 FTS5 外部内容表的 content_rowid
+  chunk_id      TEXT NOT NULL,                                                -- 对外片段 ID（c_ 前缀）；引用与前端只用它
+  doc_id        TEXT NOT NULL REFERENCES document(id),                        -- 所属文档 → document.id
+  version_id    TEXT NOT NULL REFERENCES document_version(id),                -- 所属文档版本 → document_version.id
+  region_id     TEXT NOT NULL,                                                -- 冗余县市，供检索可见范围过滤
+  seq           INTEGER NOT NULL,                                             -- 文档内片段序号，从 1 开始
+  char_start    INTEGER,                                                      -- 在原文中的起始字符偏移
+  char_end      INTEGER,                                                      -- 在原文中的结束字符偏移（不含）
+  content       TEXT NOT NULL,                                                -- 原字原文，繁体不转；引用展示必须与纸本一致
+  content_seg   TEXT NOT NULL,                                                -- 原文 + jieba 空格分词，FTS5 正文索引列
+  token_count   INTEGER NOT NULL DEFAULT 0,                                   -- token 估算数，用于拼 prompt 的预算控制
+  ocr_flag      INTEGER NOT NULL DEFAULT 0 CHECK (ocr_flag IN (0,1)),          -- 是否来自 OCR：1 是 / 0 否
+  sensitive_flag INTEGER NOT NULL DEFAULT 0 CHECK (sensitive_flag IN (0,1)),   -- 是否命中敏感内容：1 是 / 0 否
+  is_searchable INTEGER NOT NULL DEFAULT 1 CHECK (is_searchable IN (0,1)),     -- 是否参与检索：1 是 / 0 否（下线时置 0，立即生效）
+  index_version TEXT,                                                         -- 写入向量库时使用的索引版本
+  index_state   TEXT NOT NULL DEFAULT 'pending' CHECK (index_state IN ('pending','indexed','stale')),  -- 向量状态：pending 待向量化 / indexed 已向量化 / stale 向量已过期
+  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))   -- 创建时间
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ux_chunk_cid ON chunk(chunk_id);
 CREATE INDEX IF NOT EXISTS ix_chunk_doc ON chunk(doc_id, seq);
@@ -1201,71 +1210,72 @@ CREATE INDEX IF NOT EXISTS ix_chunk_index ON chunk(index_version, index_state);
 
 -- FTS5 外部内容表：不复制正文，只建索引
 CREATE VIRTUAL TABLE IF NOT EXISTS chunk_fts USING fts5(
-  content_seg, volume_seg, category_seg,
+  content_seg,                                                                -- 正文分词列（BM25 主索引列）
   content='chunk', content_rowid='id',
   tokenize="unicode61 remove_diacritics 2"
 );
 CREATE TRIGGER IF NOT EXISTS trg_chunk_ai AFTER INSERT ON chunk BEGIN
-  INSERT INTO chunk_fts(rowid, content_seg, volume_seg, category_seg)
-  VALUES (new.id, new.content_seg, new.volume_seg, new.category_seg);
+  INSERT INTO chunk_fts(rowid, content_seg) VALUES (new.id, new.content_seg);
 END;
 CREATE TRIGGER IF NOT EXISTS trg_chunk_ad AFTER DELETE ON chunk BEGIN
-  INSERT INTO chunk_fts(chunk_fts, rowid, content_seg, volume_seg, category_seg)
-  VALUES ('delete', old.id, old.content_seg, old.volume_seg, old.category_seg);
+  INSERT INTO chunk_fts(chunk_fts, rowid, content_seg)
+  VALUES ('delete', old.id, old.content_seg);
 END;
 CREATE TRIGGER IF NOT EXISTS trg_chunk_au AFTER UPDATE ON chunk BEGIN
-  INSERT INTO chunk_fts(chunk_fts, rowid, content_seg, volume_seg, category_seg)
-  VALUES ('delete', old.id, old.content_seg, old.volume_seg, old.category_seg);
-  INSERT INTO chunk_fts(rowid, content_seg, volume_seg, category_seg)
-  VALUES (new.id, new.content_seg, new.volume_seg, new.category_seg);
+  INSERT INTO chunk_fts(chunk_fts, rowid, content_seg)
+  VALUES ('delete', old.id, old.content_seg);
+  INSERT INTO chunk_fts(rowid, content_seg) VALUES (new.id, new.content_seg);
 END;
 
+-- 润色段：逐段状态机，与文档状态机严格分离
 CREATE TABLE IF NOT EXISTS polish_segment (
-  id            TEXT PRIMARY KEY,
-  doc_id        TEXT NOT NULL REFERENCES document(id),
-  version_id    TEXT NOT NULL REFERENCES document_version(id),
-  raw_chunk_id  TEXT,
-  seq           INTEGER NOT NULL,
-  raw_text      TEXT NOT NULL,
-  polished_text TEXT,
-  diff_json     TEXT CHECK (diff_json IS NULL OR json_valid(diff_json)),
-  ops_json      TEXT CHECK (ops_json IS NULL OR json_valid(ops_json)),
-  gloss_text    TEXT,
-  state         TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending','confirmed','rejected','edited')),
-  sensitive_flag INTEGER NOT NULL DEFAULT 0 CHECK (sensitive_flag IN (0,1)),
-  sensitive_tags_json TEXT CHECK (sensitive_tags_json IS NULL OR json_valid(sensitive_tags_json)),
-  edited_by     TEXT,
-  edited_at     TEXT,
-  model         TEXT,
-  prompt_version TEXT,
-  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  id            TEXT PRIMARY KEY,                                             -- 主键，ULID
+  doc_id        TEXT NOT NULL REFERENCES document(id),                        -- 所属文档 → document.id
+  version_id    TEXT NOT NULL REFERENCES document_version(id),                -- 所属润色版本 → document_version.id
+  raw_chunk_id  TEXT,                                                         -- 对应原文片段 → chunk.chunk_id
+  seq           INTEGER NOT NULL,                                             -- 版本内段落序号
+  raw_text      TEXT NOT NULL,                                                -- 原文段落
+  polished_text TEXT,                                                         -- 润色后文本；未生成时为空
+  diff_json     TEXT CHECK (diff_json IS NULL OR json_valid(diff_json)),       -- 三色 diff 的操作序列（JSON）
+  ops_json      TEXT CHECK (ops_json IS NULL OR json_valid(ops_json)),         -- 白名单操作标签 punct/t2s/segment/gloss（JSON）
+  gloss_text    TEXT,                                                         -- 注释/白话对照文本
+  state         TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending','confirmed','rejected','edited')),  -- 段状态：pending 待确认 / confirmed 已确认 / rejected 已驳回 / edited 人工已改
+  sensitive_flag INTEGER NOT NULL DEFAULT 0 CHECK (sensitive_flag IN (0,1)),   -- 是否标记为敏感段：1 是 / 0 否
+  sensitive_tags_json TEXT CHECK (sensitive_tags_json IS NULL OR json_valid(sensitive_tags_json)),  -- 敏感标签（JSON）
+  edited_by     TEXT,                                                         -- 最后一次人工编辑者 → user.id
+  edited_at     TEXT,                                                         -- 最后一次人工编辑时间
+  model         TEXT,                                                         -- 生成润色稿所用模型
+  prompt_version TEXT,                                                        -- 生成润色稿所用 prompt 版本
+  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))   -- 创建时间
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ux_seg ON polish_segment(version_id, seq);
 CREATE INDEX IF NOT EXISTS ix_seg_state ON polish_segment(doc_id, state);
 CREATE INDEX IF NOT EXISTS ix_seg_sensitive ON polish_segment(version_id, sensitive_flag);
 
 -- ---------- C 异步任务 ----------
+
+-- 异步任务：DB 是真相源，进程内队列只是唤醒信号
 CREATE TABLE IF NOT EXISTS task (
-  id              TEXT PRIMARY KEY,
-  kind            TEXT NOT NULL,
-  idempotency_key TEXT NOT NULL,
+  id              TEXT PRIMARY KEY,                                           -- 主键，ULID；对外即 task_id
+  kind            TEXT NOT NULL,                                              -- 任务类型，对应 workers/registry 里注册的 handler
+  idempotency_key TEXT NOT NULL,                                              -- 幂等键；重复提交返回已有任务而非新建
   status          TEXT NOT NULL DEFAULT 'queued' CHECK (status IN
-                    ('queued','running','succeeded','failed','timeout','cancelled')),
-  priority        INTEGER NOT NULL DEFAULT 0,
-  payload_json    TEXT CHECK (payload_json IS NULL OR json_valid(payload_json)),
-  result_json     TEXT CHECK (result_json IS NULL OR json_valid(result_json)),
-  progress        INTEGER NOT NULL DEFAULT 0 CHECK (progress BETWEEN 0 AND 100),
-  attempt         INTEGER NOT NULL DEFAULT 0,
-  max_attempts    INTEGER NOT NULL DEFAULT 3,
-  worker_id       TEXT,
-  lease_expires_at TEXT,
-  scheduled_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  started_at      TEXT,
-  finished_at     TEXT,
-  error_code      TEXT,
-  error_detail    TEXT,
-  created_by      TEXT,
-  created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+                    ('queued','running','succeeded','failed','timeout','cancelled')),  -- 状态：queued 排队 / running 执行中 / succeeded 成功 / failed 失败 / timeout 超时 / cancelled 取消
+  priority        INTEGER NOT NULL DEFAULT 0,                                 -- 优先级，越大越先被领取
+  payload_json    TEXT CHECK (payload_json IS NULL OR json_valid(payload_json)),  -- 任务入参（JSON）
+  result_json     TEXT CHECK (result_json IS NULL OR json_valid(result_json)),  -- 任务结果（JSON）
+  progress        INTEGER NOT NULL DEFAULT 0 CHECK (progress BETWEEN 0 AND 100),  -- 进度百分比 0–100
+  attempt         INTEGER NOT NULL DEFAULT 0,                                 -- 已尝试次数
+  max_attempts    INTEGER NOT NULL DEFAULT 3,                                 -- 最大尝试次数，超过即转 failed
+  worker_id       TEXT,                                                       -- 当前执行该任务的 worker 标识
+  lease_expires_at TEXT,                                                      -- 租约到期时间；过期后由回收任务重新入队
+  scheduled_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),  -- 最早可执行时间（失败退避用）
+  started_at      TEXT,                                                       -- 开始执行时间
+  finished_at     TEXT,                                                       -- 结束时间
+  error_code      TEXT,                                                       -- 错误码（分层错误码，见架构 6.4）
+  error_detail    TEXT,                                                       -- 错误详情，便于排障
+  created_by      TEXT,                                                       -- 创建人 → user.id
+  created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))  -- 创建时间
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ux_task_idem ON task(idempotency_key);
 CREATE INDEX IF NOT EXISTS ix_task_claim ON task(status, scheduled_at, priority DESC);
@@ -1273,291 +1283,308 @@ CREATE INDEX IF NOT EXISTS ix_task_lease ON task(status, lease_expires_at);
 CREATE INDEX IF NOT EXISTS ix_task_owner ON task(created_by, created_at DESC);
 
 -- ---------- D 会话、消息、引用、反馈 ----------
+
+-- 会话：一个会话只聊一个县，承载摘要与记忆槽
 CREATE TABLE IF NOT EXISTS conversation (
-  id             TEXT PRIMARY KEY,
-  user_id        TEXT NOT NULL REFERENCES user(id),
-  region_id      TEXT NOT NULL REFERENCES region(id),
-  title          TEXT NOT NULL DEFAULT '新会话',
-  mode           TEXT NOT NULL DEFAULT 'answer' CHECK (mode IN ('answer','original_only','report','preview')),
-  summary        TEXT,
-  summary_turn   INTEGER,
-  memory_slots_json TEXT CHECK (memory_slots_json IS NULL OR json_valid(memory_slots_json)),
-  turn_count     INTEGER NOT NULL DEFAULT 0,
-  last_message_at TEXT,
-  created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  updated_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  deleted_at     TEXT,
-  purge_after    TEXT
+  id             TEXT PRIMARY KEY,                                            -- 主键，ULID
+  user_id        TEXT NOT NULL REFERENCES user(id),                           -- 归属用户 → user.id
+  region_id      TEXT NOT NULL REFERENCES region(id),                         -- 绑定的县市 → region.id；一个会话只聊一个县
+  title          TEXT NOT NULL DEFAULT '新会话',                              -- 会话标题，可由首轮问题生成
+  mode           TEXT NOT NULL DEFAULT 'answer' CHECK (mode IN ('answer','original_only','report','preview')),  -- 会话模式：answer 正常问答 / original_only 只给原文 / report 报告 / preview 预览
+  summary        TEXT,                                                        -- 历史摘要；超窗口后压缩写入
+  summary_turn   INTEGER,                                                     -- 摘要已覆盖到第几轮
+  memory_slots_json TEXT CHECK (memory_slots_json IS NULL OR json_valid(memory_slots_json)),  -- 记忆槽（追问对象、偏好等，JSON）
+  turn_count     INTEGER NOT NULL DEFAULT 0,                                  -- 轮次数
+  last_message_at TEXT,                                                       -- 最后一条消息时间，列表排序用
+  created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),  -- 创建时间
+  updated_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),  -- 更新时间
+  deleted_at     TEXT,                                                        -- 软删时间；NULL 表示有效
+  purge_after    TEXT                                                         -- 物理清理时间（软删 7 天后）
 );
 CREATE INDEX IF NOT EXISTS ix_conv_user ON conversation(user_id, deleted_at, last_message_at DESC);
 CREATE INDEX IF NOT EXISTS ix_conv_purge ON conversation(purge_after) WHERE deleted_at IS NOT NULL;
 
+-- 消息：正文 + 结果级指标（延迟、token、三版本号）
 CREATE TABLE IF NOT EXISTS message (
-  id              TEXT PRIMARY KEY,
-  conversation_id TEXT NOT NULL REFERENCES conversation(id),
-  seq             INTEGER NOT NULL,
-  role            TEXT NOT NULL CHECK (role IN ('user','assistant')),
-  content         TEXT NOT NULL,
-  answer_type     TEXT CHECK (answer_type IN ('fact','partial','refuse','boundary','report_outline')),
-  confidence      TEXT CHECK (confidence IN ('high','medium','low')),
-  caveats_json    TEXT CHECK (caveats_json IS NULL OR json_valid(caveats_json)),
-  followups_json  TEXT CHECK (followups_json IS NULL OR json_valid(followups_json)),
-  refusal_json    TEXT CHECK (refusal_json IS NULL OR json_valid(refusal_json)),
-  citation_count  INTEGER NOT NULL DEFAULT 0,
-  ttft_ms         INTEGER,
-  total_ms        INTEGER,
-  token_in        INTEGER,
-  token_out       INTEGER,
-  model           TEXT,
-  prompt_version  TEXT,
-  index_version   TEXT,
-  trace_id        TEXT,
-  status          TEXT NOT NULL DEFAULT 'complete' CHECK (status IN ('streaming','complete','partial','failed')),
-  error_code      TEXT,
-  created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  deleted_at      TEXT
+  id              TEXT PRIMARY KEY,                                           -- 主键，ULID
+  conversation_id TEXT NOT NULL REFERENCES conversation(id),                  -- 所属会话 → conversation.id
+  seq             INTEGER NOT NULL,                                           -- 会话内序号，从 1 开始
+  role            TEXT NOT NULL CHECK (role IN ('user','assistant')),          -- 角色：user 用户 / assistant 助手
+  content         TEXT NOT NULL,                                              -- 消息正文
+  answer_type     TEXT CHECK (answer_type IN ('fact','partial','refuse','boundary','report_outline')),  -- 回答类型：fact 有据可答 / partial 部分可答 / refuse 拒答 / boundary 越界 / report_outline 报告大纲
+  confidence      TEXT CHECK (confidence IN ('high','medium','low')),          -- 置信度：high / medium / low
+  caveats_json    TEXT CHECK (caveats_json IS NULL OR json_valid(caveats_json)),  -- 限定说明（JSON）
+  followups_json  TEXT CHECK (followups_json IS NULL OR json_valid(followups_json)),  -- 推荐追问（JSON）
+  refusal_json    TEXT CHECK (refusal_json IS NULL OR json_valid(refusal_json)),  -- 拒答信息，含原因码与引导语（JSON）
+  citation_count  INTEGER NOT NULL DEFAULT 0,                                 -- 引用条数
+  ttft_ms         INTEGER,                                                    -- 首字延迟（毫秒）
+  total_ms        INTEGER,                                                    -- 整轮总耗时（毫秒）
+  token_in        INTEGER,                                                    -- 输入 token 数
+  token_out       INTEGER,                                                    -- 输出 token 数
+  model           TEXT,                                                       -- 生成该消息所用模型
+  prompt_version  TEXT,                                                       -- prompt 版本
+  index_version   TEXT,                                                       -- 检索时使用的索引版本
+  trace_id        TEXT,                                                       -- 对应轨迹 → agent_trace.trace_id
+  status          TEXT NOT NULL DEFAULT 'complete' CHECK (status IN ('streaming','complete','partial','failed')),  -- 状态：streaming 流式中 / complete 完成 / partial 部分完成 / failed 失败
+  error_code      TEXT,                                                       -- 错误码
+  created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),  -- 创建时间
+  deleted_at      TEXT                                                        -- 软删时间；NULL 表示有效
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ux_msg_seq ON message(conversation_id, seq);
 CREATE INDEX IF NOT EXISTS ix_msg_trace ON message(trace_id);
 CREATE INDEX IF NOT EXISTS ix_msg_created ON message(created_at DESC);
 
+-- 引用：存原文快照 + 片段内字符区间，保证重索引后历史回答仍可复现
 CREATE TABLE IF NOT EXISTS citation (
-  id             TEXT PRIMARY KEY,
-  message_id     TEXT NOT NULL REFERENCES message(id),
-  no             INTEGER NOT NULL,
-  chunk_id       TEXT NOT NULL,
-  doc_id         TEXT NOT NULL,
-  version_id     TEXT,
-  volume         TEXT,
-  quote_snapshot TEXT NOT NULL,
-  span_start     INTEGER,
-  span_end       INTEGER,
-  supports       TEXT,
-  valid          INTEGER NOT NULL DEFAULT 1 CHECK (valid IN (0,1)),
-  clicked_at     TEXT,
-  created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  id             TEXT PRIMARY KEY,                                            -- 主键，ULID
+  message_id     TEXT NOT NULL REFERENCES message(id),                        -- 所属消息 → message.id
+  no             INTEGER NOT NULL,                                            -- 消息内的引用编号，从 1 开始
+  chunk_id       TEXT NOT NULL,                                               -- 命中的片段 → chunk.chunk_id
+  doc_id         TEXT NOT NULL,                                               -- 片段所属文档 → document.id
+  version_id     TEXT,                                                        -- 片段所属文档版本 → document_version.id
+  quote_snapshot TEXT NOT NULL,                                               -- 引用原文快照；重切分后仍能还原当时看到的文字
+  span_start     INTEGER,                                                     -- 引用在片段内的起始字符偏移
+  span_end       INTEGER,                                                     -- 引用在片段内的结束字符偏移
+  supports       TEXT,                                                        -- 该引用支撑答案里的哪句话
+  valid          INTEGER NOT NULL DEFAULT 1 CHECK (valid IN (0,1)),            -- 引用是否仍有效：1 有效 / 0 失效
+  clicked_at     TEXT,                                                        -- 用户点击引用的时间
+  created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))   -- 创建时间
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ux_cit ON citation(message_id, no);
 CREATE INDEX IF NOT EXISTS ix_cit_chunk ON citation(chunk_id);
 CREATE INDEX IF NOT EXISTS ix_cit_click ON citation(clicked_at) WHERE clicked_at IS NOT NULL;
 
+-- 反馈：点赞/点踩 + 原因码 + 处理状态
 CREATE TABLE IF NOT EXISTS feedback (
-  id          TEXT PRIMARY KEY,
-  message_id  TEXT NOT NULL REFERENCES message(id),
-  user_id     TEXT NOT NULL REFERENCES user(id),
-  type        TEXT NOT NULL CHECK (type IN ('up','down')),
+  id          TEXT PRIMARY KEY,                                               -- 主键，ULID
+  message_id  TEXT NOT NULL REFERENCES message(id),                           -- 被评价的消息 → message.id
+  user_id     TEXT NOT NULL REFERENCES user(id),                              -- 评价人 → user.id
+  type        TEXT NOT NULL CHECK (type IN ('up','down')),                    -- 态度：up 赞 / down 踩
   reason_code TEXT CHECK (reason_code IN
-                ('wrong_fact','wrong_citation','incomplete','refuse_too_strict','unreadable','other')),
-  note        TEXT,
-  trace_id    TEXT,
-  status      TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','fixed','invalid')),
-  handled_by  TEXT,
-  handled_at  TEXT,
-  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+                ('wrong_fact','wrong_citation','incomplete','refuse_too_strict','unreadable','other')),  -- 原因码：wrong_fact 事实错 / wrong_citation 引用错 / incomplete 不完整 / refuse_too_strict 拒答过严 / unreadable 答非所读 / other 其他
+  note        TEXT,                                                           -- 用户补充说明
+  trace_id    TEXT,                                                           -- 关联轨迹 → agent_trace.trace_id
+  status      TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','fixed','invalid')),  -- 处理状态：open 待处理 / fixed 已修复 / invalid 无效反馈
+  handled_by  TEXT,                                                           -- 处理人 → user.id
+  handled_at  TEXT,                                                           -- 处理时间
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))     -- 创建时间
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ux_fb ON feedback(message_id, user_id);
 CREATE INDEX IF NOT EXISTS ix_fb_list ON feedback(status, created_at DESC);
 
 -- ---------- E 报告与导出 ----------
+
+-- 报告：模板化长文生成的状态载体
 CREATE TABLE IF NOT EXISTS report (
-  id           TEXT PRIMARY KEY,
-  user_id      TEXT NOT NULL REFERENCES user(id),
-  region_id    TEXT NOT NULL REFERENCES region(id),
-  template_key TEXT NOT NULL CHECK (template_key IN ('county_profile','history_evolution','person_profile')),
-  title        TEXT NOT NULL,
+  id           TEXT PRIMARY KEY,                                              -- 主键，ULID
+  user_id      TEXT NOT NULL REFERENCES user(id),                             -- 发起人 → user.id
+  region_id    TEXT NOT NULL REFERENCES region(id),                           -- 报告所属县市 → region.id
+  template_key TEXT NOT NULL CHECK (template_key IN ('county_profile','history_evolution','person_profile')),  -- 模板：county_profile 县情概况 / history_evolution 历史沿革 / person_profile 人物小传
+  title        TEXT NOT NULL,                                                 -- 报告标题
   status       TEXT NOT NULL CHECK (status IN
-                 ('outline_pending','generating','partial','succeeded','failed','cancelled')),
-  outline_json TEXT CHECK (outline_json IS NULL OR json_valid(outline_json)),
-  params_json  TEXT CHECK (params_json IS NULL OR json_valid(params_json)),
-  word_count   INTEGER,
-  token_in     INTEGER,
-  token_out    INTEGER,
-  error_code   TEXT,
-  created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  finished_at  TEXT,
-  deleted_at   TEXT
+                 ('outline_pending','generating','partial','succeeded','failed','cancelled')),  -- 状态：outline_pending 待确认大纲 / generating 生成中 / partial 部分完成 / succeeded 成功 / failed 失败 / cancelled 取消
+  outline_json TEXT CHECK (outline_json IS NULL OR json_valid(outline_json)),  -- 大纲结构（JSON）
+  params_json  TEXT CHECK (params_json IS NULL OR json_valid(params_json)),    -- 生成参数（JSON）
+  word_count   INTEGER,                                                       -- 成文字数
+  token_in     INTEGER,                                                       -- 输入 token 数
+  token_out    INTEGER,                                                       -- 输出 token 数
+  error_code   TEXT,                                                          -- 错误码
+  created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),   -- 创建时间
+  finished_at  TEXT,                                                          -- 结束时间
+  deleted_at   TEXT                                                           -- 软删时间；NULL 表示有效
 );
 CREATE INDEX IF NOT EXISTS ix_rep_user ON report(user_id, deleted_at, created_at DESC);
 CREATE INDEX IF NOT EXISTS ix_rep_status ON report(status);
 
+-- 报告章节：逐节生成、可单节重试
 CREATE TABLE IF NOT EXISTS report_section (
-  id            TEXT PRIMARY KEY,
-  report_id     TEXT NOT NULL REFERENCES report(id),
-  seq           INTEGER NOT NULL,
-  heading       TEXT NOT NULL,
-  points_json   TEXT CHECK (points_json IS NULL OR json_valid(points_json)),
-  content_md    TEXT,
+  id            TEXT PRIMARY KEY,                                             -- 主键，ULID
+  report_id     TEXT NOT NULL REFERENCES report(id),                          -- 所属报告 → report.id
+  seq           INTEGER NOT NULL,                                             -- 章节序号
+  heading       TEXT NOT NULL,                                                -- 章节标题
+  points_json   TEXT CHECK (points_json IS NULL OR json_valid(points_json)),   -- 该节要点（JSON）
+  content_md    TEXT,                                                         -- 章节正文（Markdown）
   status        TEXT NOT NULL DEFAULT 'pending' CHECK (status IN
-                  ('pending','running','succeeded','failed','skipped')),
-  attempt       INTEGER NOT NULL DEFAULT 0,
-  error_code    TEXT,
-  citations_json TEXT CHECK (citations_json IS NULL OR json_valid(citations_json)),
-  token_out     INTEGER,
-  updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+                  ('pending','running','succeeded','failed','skipped')),       -- 状态：pending 待生成 / running 生成中 / succeeded 成功 / failed 失败 / skipped 跳过
+  attempt       INTEGER NOT NULL DEFAULT 0,                                   -- 已尝试次数
+  error_code    TEXT,                                                         -- 错误码
+  citations_json TEXT CHECK (citations_json IS NULL OR json_valid(citations_json)),  -- 该节引用的片段（JSON）
+  token_out     INTEGER,                                                      -- 输出 token 数
+  updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))   -- 更新时间
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ux_sec ON report_section(report_id, seq);
 
+-- 导出件：落盘文件 + 限时下载令牌
 CREATE TABLE IF NOT EXISTS export_artifact (
-  id          TEXT PRIMARY KEY,
-  report_id   TEXT NOT NULL REFERENCES report(id),
-  fmt         TEXT NOT NULL CHECK (fmt IN ('md','docx')),
-  file_path   TEXT NOT NULL,
-  size_bytes  INTEGER,
-  sha256      TEXT,
-  token       TEXT NOT NULL,
-  expires_at  TEXT NOT NULL,
-  status      TEXT NOT NULL DEFAULT 'ready' CHECK (status IN ('ready','expired','deleted')),
-  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  id          TEXT PRIMARY KEY,                                               -- 主键，ULID
+  report_id   TEXT NOT NULL REFERENCES report(id),                            -- 所属报告 → report.id
+  fmt         TEXT NOT NULL CHECK (fmt IN ('md','docx')),                      -- 导出格式：md / docx
+  file_path   TEXT NOT NULL,                                                  -- 文件落盘路径（data/exports 下）
+  size_bytes  INTEGER,                                                        -- 文件大小（字节）
+  sha256      TEXT,                                                           -- 文件校验和
+  token       TEXT NOT NULL,                                                  -- 下载令牌，唯一且限时
+  expires_at  TEXT NOT NULL,                                                  -- 令牌过期时间（默认 24 小时）
+  status      TEXT NOT NULL DEFAULT 'ready' CHECK (status IN ('ready','expired','deleted')),  -- 状态：ready 可下载 / expired 已过期 / deleted 已删除
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))     -- 创建时间
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ux_exp_token ON export_artifact(token);
 CREATE INDEX IF NOT EXISTS ix_exp_report ON export_artifact(report_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS ix_exp_expire ON export_artifact(expires_at);
 
 -- ---------- F 轨迹三表 ----------
+
+-- 轨迹：一条 = 一次请求；用结构替代"模型自述"
 CREATE TABLE IF NOT EXISTS agent_trace (
-  trace_id       TEXT PRIMARY KEY,
-  request_id     TEXT NOT NULL,
-  user_id        TEXT,
-  role           TEXT,
-  session_id     TEXT,
-  message_id     TEXT,
-  region_id      TEXT,
-  mode           TEXT,
-  question_text  TEXT,
-  question_hash  TEXT,
-  intent         TEXT CHECK (intent IN ('qa','report','chitchat','write_request','unknown')),
-  answer_type    TEXT,
-  status         TEXT NOT NULL CHECK (status IN ('success','degraded','failed')),
-  total_ms       INTEGER,
-  token_in       INTEGER,
-  token_out      INTEGER,
-  model          TEXT,
-  prompt_version TEXT,
-  index_version  TEXT,
-  span_count     INTEGER NOT NULL DEFAULT 0,
-  event_count    INTEGER NOT NULL DEFAULT 0,
-  size_bytes     INTEGER NOT NULL DEFAULT 0,
-  truncated      INTEGER NOT NULL DEFAULT 0 CHECK (truncated IN (0,1)),
-  replay_of      TEXT,
-  created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  trace_id       TEXT PRIMARY KEY,                                            -- 主键，一次请求一条
+  request_id     TEXT NOT NULL,                                               -- 请求 ID，用于与访问日志关联
+  user_id        TEXT,                                                        -- 发起人 → user.id
+  role           TEXT,                                                        -- 发起时的角色快照
+  session_id     TEXT,                                                        -- 会话 ID → conversation.id
+  message_id     TEXT,                                                        -- 对应的助手消息 → message.id
+  region_id      TEXT,                                                        -- 请求的县市 → region.id
+  mode           TEXT,                                                        -- 会话模式快照
+  question_text  TEXT,                                                        -- 脱敏后的问题原文（手机号、证件号已打码）
+  question_hash  TEXT,                                                        -- 脱敏后问题的哈希，用于聚合"同一问题反复失败"
+  intent         TEXT CHECK (intent IN ('qa','report','chitchat','write_request','unknown')),  -- 意图：qa 问答 / report 报告 / chitchat 闲聊 / write_request 改写请求 / unknown 未知
+  answer_type    TEXT,                                                        -- 最终回答类型，取值同 message.answer_type
+  status         TEXT NOT NULL CHECK (status IN ('success','degraded','failed')),  -- 结果：success 成功 / degraded 降级 / failed 失败
+  total_ms       INTEGER,                                                     -- 端到端总耗时（毫秒）
+  token_in       INTEGER,                                                     -- 输入 token 数
+  token_out      INTEGER,                                                     -- 输出 token 数
+  model          TEXT,                                                        -- 使用的模型
+  prompt_version TEXT,                                                        -- prompt 版本
+  index_version  TEXT,                                                        -- 索引版本
+  span_count     INTEGER NOT NULL DEFAULT 0,                                  -- 阶段数
+  event_count    INTEGER NOT NULL DEFAULT 0,                                  -- 事件数
+  size_bytes     INTEGER NOT NULL DEFAULT 0,                                  -- 轨迹体积（字节）
+  truncated      INTEGER NOT NULL DEFAULT 0 CHECK (truncated IN (0,1)),        -- 是否因超限截断：1 是 / 0 否
+  replay_of      TEXT,                                                        -- 若为重放产生，指向原始 trace_id
+  created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))   -- 创建时间
 );
 CREATE INDEX IF NOT EXISTS ix_tr_time ON agent_trace(created_at DESC);
 CREATE INDEX IF NOT EXISTS ix_tr_msg ON agent_trace(message_id);
 CREATE INDEX IF NOT EXISTS ix_tr_filter ON agent_trace(answer_type, status, created_at DESC);
 CREATE INDEX IF NOT EXISTS ix_tr_user ON agent_trace(user_id, created_at DESC);
 
+-- 阶段：一条 = 一个流水线阶段；存预算与实际耗时，可直接算超预算
 CREATE TABLE IF NOT EXISTS agent_span (
-  span_id      TEXT PRIMARY KEY,
-  trace_id     TEXT NOT NULL REFERENCES agent_trace(trace_id),
+  span_id      TEXT PRIMARY KEY,                                              -- 主键，ULID
+  trace_id     TEXT NOT NULL REFERENCES agent_trace(trace_id),                -- 所属轨迹 → agent_trace.trace_id
   name         TEXT NOT NULL CHECK (name IN
-                 ('auth','intent','rewrite','retrieve','judge','generate','validate','deliver')),
-  seq          INTEGER NOT NULL,
-  duration_ms  INTEGER,
-  status       TEXT NOT NULL CHECK (status IN ('ok','degraded','failed','skipped')),
-  budget_ms    INTEGER,
-  input_digest TEXT,
-  output_digest TEXT,
-  error_code   TEXT,
-  started_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+                 ('auth','intent','rewrite','retrieve','judge','generate','validate','deliver')),  -- 阶段名：auth 鉴权 / intent 意图 / rewrite 改写 / retrieve 检索 / judge 判定 / generate 生成 / validate 校验 / deliver 交付
+  seq          INTEGER NOT NULL,                                              -- 阶段顺序号
+  duration_ms  INTEGER,                                                       -- 实际耗时（毫秒）
+  status       TEXT NOT NULL CHECK (status IN ('ok','degraded','failed','skipped')),  -- 阶段结果：ok 正常 / degraded 降级 / failed 失败 / skipped 跳过
+  budget_ms    INTEGER,                                                       -- 该阶段的时间预算（毫秒）
+  input_digest TEXT,                                                          -- 输入摘要（哈希），不落原文
+  output_digest TEXT,                                                         -- 输出摘要（哈希），不落原文
+  error_code   TEXT,                                                          -- 错误码
+  started_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))    -- 开始时间
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ux_span ON agent_span(trace_id, seq);
 CREATE INDEX IF NOT EXISTS ix_span_name ON agent_span(name, started_at DESC);
 
+-- 事件：一条 = 一次工具调用/决策/校验；只存摘要与白名单字段
 CREATE TABLE IF NOT EXISTS agent_event (
-  event_id      TEXT PRIMARY KEY,
-  trace_id      TEXT NOT NULL,
-  span_id       TEXT NOT NULL REFERENCES agent_span(span_id),
-  seq           INTEGER NOT NULL,
-  type          TEXT NOT NULL CHECK (type IN ('tool_call','decision','validation')),
-  tool_name     TEXT,
-  params_digest TEXT,
-  result_count  INTEGER,
-  top_score     REAL,
-  hit_chunk_ids TEXT CHECK (hit_chunk_ids IS NULL OR json_valid(hit_chunk_ids)),
-  decision      TEXT,
-  reason_code   TEXT,
-  detail        TEXT CHECK (detail IS NULL OR json_valid(detail)),
-  duration_ms   INTEGER,
-  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  event_id      TEXT PRIMARY KEY,                                             -- 主键，ULID
+  trace_id      TEXT NOT NULL,                                                -- 所属轨迹，冗余一列以省掉轨迹页最常见的 join
+  span_id       TEXT NOT NULL REFERENCES agent_span(span_id),                  -- 所属阶段 → agent_span.span_id
+  seq           INTEGER NOT NULL,                                             -- 事件顺序号
+  type          TEXT NOT NULL CHECK (type IN ('tool_call','decision','validation')),  -- 事件类型：tool_call 工具调用 / decision 决策 / validation 校验
+  tool_name     TEXT,                                                         -- 工具名，type=tool_call 时有值
+  params_digest TEXT,                                                         -- 入参摘要（哈希），不落原文
+  result_count  INTEGER,                                                      -- 结果条数
+  top_score     REAL,                                                         -- 最高分，指 rerank 分（0–1），不是 RRF 分
+  hit_chunk_ids TEXT CHECK (hit_chunk_ids IS NULL OR json_valid(hit_chunk_ids)),  -- 命中片段前 10 条 {id,score}（JSON），不存正文
+  decision      TEXT,                                                         -- 决策结论
+  reason_code   TEXT,                                                         -- 决策原因码
+  detail        TEXT CHECK (detail IS NULL OR json_valid(detail)),              -- 白名单字段的详情（JSON）；禁止写入自由文本推理（CoT）
+  duration_ms   INTEGER,                                                      -- 耗时（毫秒）
+  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))    -- 创建时间
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ux_ev ON agent_event(trace_id, seq);
 CREATE INDEX IF NOT EXISTS ix_ev_tool ON agent_event(tool_name, created_at DESC);
 
 -- ---------- G 运营与配置 ----------
+
+-- 管理操作留痕；与轨迹严格分离（一个是"谁改了什么"，一个是"系统怎么答的"）
 CREATE TABLE IF NOT EXISTS operation_log (
-  id          TEXT PRIMARY KEY,
-  operator_id TEXT NOT NULL,
+  id          TEXT PRIMARY KEY,                                               -- 主键，ULID
+  operator_id TEXT NOT NULL,                                                  -- 操作人 → user.id
   action      TEXT NOT NULL CHECK (action IN
                 ('doc.upload','doc.parse','doc.publish','doc.offline','doc.rollback','doc.delete',
                  'polish.confirm','user.disable','user.enable','invite.create','config.update',
-                 'export.download')),
-  target_type TEXT NOT NULL,
-  target_id   TEXT,
-  result      TEXT NOT NULL CHECK (result IN ('ok','denied','failed')),
-  ip_hash     TEXT,
-  detail_json TEXT CHECK (detail_json IS NULL OR json_valid(detail_json)),
-  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+                 'export.download')),                                         -- 动作：doc.upload 上传 / doc.parse 解析 / doc.publish 发布 / doc.offline 下线 / doc.rollback 回滚 / doc.delete 删除 / polish.confirm 润色确认 / user.disable 停用用户 / user.enable 启用用户 / invite.create 生成邀请码 / config.update 改配置 / export.download 下载导出
+  target_type TEXT NOT NULL,                                                  -- 操作对象类型（document / user / config …）
+  target_id   TEXT,                                                           -- 操作对象 ID
+  result      TEXT NOT NULL CHECK (result IN ('ok','denied','failed')),        -- 结果：ok 成功 / denied 无权限 / failed 失败
+  ip_hash     TEXT,                                                           -- 操作人 IP 哈希，脱敏存储
+  detail_json TEXT CHECK (detail_json IS NULL OR json_valid(detail_json)),     -- 变更详情（JSON），如发布前后的字段差异
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))     -- 创建时间
 );
 CREATE INDEX IF NOT EXISTS ix_oplog_target ON operation_log(target_type, target_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS ix_oplog_time ON operation_log(created_at DESC);
 CREATE INDEX IF NOT EXISTS ix_oplog_actor ON operation_log(operator_id, created_at DESC);
 
+-- 评测样本：可人工编写，也可由真实轨迹转成
 CREATE TABLE IF NOT EXISTS eval_case (
-  id                TEXT PRIMARY KEY,
-  dataset_key       TEXT NOT NULL,
-  dataset_version   TEXT NOT NULL,
-  region_id         TEXT,
-  question          TEXT NOT NULL,
-  expected_answer   TEXT,
-  expected_chunk_ids TEXT CHECK (expected_chunk_ids IS NULL OR json_valid(expected_chunk_ids)),
-  answerable        INTEGER NOT NULL DEFAULT 1 CHECK (answerable IN (0,1)),
-  tags_json         TEXT CHECK (tags_json IS NULL OR json_valid(tags_json)),
-  source_trace_id   TEXT,
-  label_status      TEXT NOT NULL DEFAULT 'draft' CHECK (label_status IN ('draft','reviewed','frozen')),
-  created_by        TEXT,
-  created_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  deleted_at        TEXT
+  id                TEXT PRIMARY KEY,                                         -- 主键，ULID
+  dataset_key       TEXT NOT NULL,                                            -- 数据集标识
+  dataset_version   TEXT NOT NULL,                                            -- 数据集版本
+  region_id         TEXT,                                                     -- 所属县市 → region.id
+  question          TEXT NOT NULL,                                            -- 问题
+  expected_answer   TEXT,                                                     -- 期望答案
+  expected_chunk_ids TEXT CHECK (expected_chunk_ids IS NULL OR json_valid(expected_chunk_ids)),  -- 期望命中的片段（JSON）
+  answerable        INTEGER NOT NULL DEFAULT 1 CHECK (answerable IN (0,1)),     -- 是否可答：1 语料里有答案 / 0 应拒答
+  tags_json         TEXT CHECK (tags_json IS NULL OR json_valid(tags_json)),   -- 标签（JSON），如题型、难度
+  source_trace_id   TEXT,                                                     -- 若由轨迹转样本，记原始 trace_id
+  label_status      TEXT NOT NULL DEFAULT 'draft' CHECK (label_status IN ('draft','reviewed','frozen')),  -- 标注状态：draft 草稿 / reviewed 已复核 / frozen 已冻结
+  created_by        TEXT,                                                     -- 创建人 → user.id
+  created_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),  -- 创建时间
+  deleted_at        TEXT                                                      -- 软删时间；NULL 表示有效
 );
 CREATE INDEX IF NOT EXISTS ix_case_set ON eval_case(dataset_key, dataset_version, label_status);
 CREATE INDEX IF NOT EXISTS ix_case_src ON eval_case(source_trace_id);
 
+-- 评测运行：一次实验台账，快照当次配置与逐条结果
 CREATE TABLE IF NOT EXISTS eval_run (
-  id                TEXT PRIMARY KEY,
-  dataset_key       TEXT NOT NULL,
-  dataset_version   TEXT NOT NULL,
-  config_json       TEXT NOT NULL CHECK (json_valid(config_json)),
-  status            TEXT NOT NULL CHECK (status IN ('queued','running','succeeded','failed')),
-  metrics_json      TEXT CHECK (metrics_json IS NULL OR json_valid(metrics_json)),
-  case_results_json TEXT CHECK (case_results_json IS NULL OR json_valid(case_results_json)),
-  started_at        TEXT,
-  finished_at       TEXT,
-  created_by        TEXT
+  id                TEXT PRIMARY KEY,                                         -- 主键，ULID
+  dataset_key       TEXT NOT NULL,                                            -- 评测的数据集标识
+  dataset_version   TEXT NOT NULL,                                            -- 评测的数据集版本
+  config_json       TEXT NOT NULL CHECK (json_valid(config_json)),             -- 本次运行的配置快照（JSON），必填
+  status            TEXT NOT NULL CHECK (status IN ('queued','running','succeeded','failed')),  -- 状态：queued 排队 / running 运行中 / succeeded 成功 / failed 失败
+  metrics_json      TEXT CHECK (metrics_json IS NULL OR json_valid(metrics_json)),  -- 汇总指标（JSON），如召回率、引用准确率
+  case_results_json TEXT CHECK (case_results_json IS NULL OR json_valid(case_results_json)),  -- 逐条用例结果（JSON）
+  started_at        TEXT,                                                     -- 开始时间
+  finished_at       TEXT,                                                     -- 结束时间
+  created_by        TEXT                                                      -- 发起人 → user.id
 );
 CREATE INDEX IF NOT EXISTS ix_run_set ON eval_run(dataset_key, dataset_version, started_at DESC);
 
+-- 配置中心：阈值、prompt 版本、模型参数、限额
 CREATE TABLE IF NOT EXISTS app_config (
-  key         TEXT PRIMARY KEY,
-  value_json  TEXT NOT NULL CHECK (json_valid(value_json)),
-  value_type  TEXT NOT NULL CHECK (value_type IN ('int','float','string','bool','json')),
-  version     INTEGER NOT NULL DEFAULT 1,
-  description TEXT,
-  updated_by  TEXT,
-  updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  key         TEXT PRIMARY KEY,                                               -- 配置键，如 llm.embedding.model
+  value_json  TEXT NOT NULL CHECK (json_valid(value_json)),                     -- 配置值，统一 JSON 编码存储
+  value_type  TEXT NOT NULL CHECK (value_type IN ('int','float','string','bool','json')),  -- 值类型：int / float / string / bool / json
+  version     INTEGER NOT NULL DEFAULT 1,                                     -- 配置版本，每次更新 +1（用于缓存失效与审计）
+  description TEXT,                                                           -- 配置说明
+  updated_by  TEXT,                                                           -- 最后修改人 → user.id
+  updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))     -- 最后修改时间
 );
 
+-- 日聚合指标：按天 + 指标 + 两个维度预聚合，避免实时扫全表
 CREATE TABLE IF NOT EXISTS metric_daily (
-  stat_date    TEXT NOT NULL,
-  metric_key   TEXT NOT NULL,
-  dim1         TEXT NOT NULL DEFAULT '',
-  dim2         TEXT NOT NULL DEFAULT '',
-  value_num    REAL,
-  value_json   TEXT CHECK (value_json IS NULL OR json_valid(value_json)),
-  sample_count INTEGER NOT NULL DEFAULT 0,
-  updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  stat_date    TEXT NOT NULL,                                                 -- 统计日期，YYYY-MM-DD
+  metric_key   TEXT NOT NULL,                                                 -- 指标名
+  dim1         TEXT NOT NULL DEFAULT '',                                      -- 维度 1（如 region_id）；空串表示无此维度
+  dim2         TEXT NOT NULL DEFAULT '',                                      -- 维度 2（如 status）；空串表示无此维度
+  value_num    REAL,                                                          -- 标量结果
+  value_json   TEXT CHECK (value_json IS NULL OR json_valid(value_json)),      -- 非标量结果（JSON）
+  sample_count INTEGER NOT NULL DEFAULT 0,                                    -- 参与聚合的样本数
+  updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),    -- 最后更新时间
   PRIMARY KEY (stat_date, metric_key, dim1, dim2)
 );
 CREATE INDEX IF NOT EXISTS ix_metric_key ON metric_daily(metric_key, stat_date DESC);
-
 PRAGMA user_version = 1;
 ```
 
@@ -1577,8 +1604,7 @@ PRAGMA user_version = 1;
 | **visible_doc_ids** | 当前用户在当前县可见的语料 id 集合，由一条 SQL 实时算出（D-6） |
 | **RRF** | Reciprocal Rank Fusion，`Σ 1/(k+rank)`，量纲约 0.016/路 |
 | **bge-m3** | 向量化模型，1024 维、8192 token 上下文、MIT 许可，本地 CPU 可跑（D-7） |
-| **content_sim** | 由 `content` 经 opencc `t2s` 得到的**简体不分词**文本，仅作向量化输入，不落库（1.5） |
-| **index_version** | 索引版本号，编码"模型 / 维度 / 块大小 / opencc 版本"，同时是 Chroma collection 名后缀 |
+| **index_version** | 索引版本号，编码"模型 / 维度 / 块大小"，同时是 Chroma collection 名后缀 |
 | **rerank 分** | cross-encoder 输出的 0–1 相关度，**阈值只作用于它**（D-5） |
 | **引证档** | 阶段 5a 的结构化输出：结论 + 引用 + 类型 + 置信度 |
 | **span** | 轨迹中的一个阶段，8 个阶段名固定 |

@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# backend/app/core/config.py → parents[2] = backend/
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
@@ -20,6 +24,18 @@ class Settings(BaseSettings):
     refresh_ttl_seconds: int = 2_592_000
 
     upload_max_mb: int = 50
+
+
+def resolve_path(value: str | Path) -> Path:
+    """把配置里的相对路径按 ``backend/`` 解析，而不是进程 cwd。
+
+    与 ``repo.db.default_db_path()`` 保持同一口径：从仓库根目录启动 uvicorn 时，
+    ``./data`` 仍指向 ``backend/data``，避免模型缓存与数据库落在两个地方。
+    """
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = (BACKEND_ROOT / path).resolve()
+    return path
 
 
 @lru_cache

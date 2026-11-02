@@ -482,7 +482,14 @@ def get_write_queue(db_path: str | Path | None = None) -> WriteQueue:
     """
     global _writer, _writer_path
 
-    path = (Path(db_path) if db_path is not None else default_db_path()).resolve()
+    if db_path is not None:
+        path = Path(db_path).resolve()
+    elif _writer_path is not None:
+        # 已由 db.init(tmp_path) 等显式路径初始化时，默认入口沿用同一个库；
+        # 否则测试/脚本的临时库会被解析成 backend/data/app.db 并触发路径冲突。
+        path = _writer_path
+    else:
+        path = default_db_path().resolve()
     with _writer_lock:
         if _writer is None:
             _writer = WriteQueue(path)
@@ -511,13 +518,26 @@ def shutdown(timeout: float = 10.0) -> None:
 # ---------------------------------------------------------------- 读连接与启动
 
 
+def _resolve_db_path(db_path: str | Path | None) -> Path:
+    """显式路径优先；否则沿用已初始化的写队列路径；最后才用默认库。
+
+    进程内只有一个库（D-1）。这样 ``db.init(tmp_path)`` 之后，repo 层不传路径的
+    读写仍然落在同一个临时库，不会被解析回 ``backend/data/app.db``。
+    """
+    if db_path is not None:
+        return Path(db_path).resolve()
+    if _writer_path is not None:
+        return _writer_path
+    return default_db_path().resolve()
+
+
 @contextmanager
 def read_connection(db_path: str | Path | None = None) -> Iterator[sqlite3.Connection]:
     """每次读取打开独立连接，用完即关。
 
     WAL 下读不阻塞写；不要跨请求复用连接（会持有快照，导致 WAL 无法 checkpoint）。
     """
-    conn = connect(Path(db_path) if db_path is not None else default_db_path())
+    conn = connect(_resolve_db_path(db_path))
     try:
         yield conn
     finally:

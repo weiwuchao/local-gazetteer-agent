@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import queue
 
-TASK_QUEUE: "queue.Queue[str]" = queue.Queue()
+TASK_QUEUE: queue.Queue[str] = queue.Queue()
 
 
 def enqueue(task_id: str) -> None:

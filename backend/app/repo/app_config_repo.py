@@ -47,7 +47,7 @@ DEFAULTS: dict[str, tuple[Any, ValueType, str]] = {
     "llm.rerank.model": (
         "BAAI/bge-reranker-v2-m3",
         "string",
-        "none 时关闭 rerank，阈值语义变为余弦（D-5）",
+        "必选；为空或 none 时加载阶段抛 RagUnavailable（不能关闭 rerank）",
     ),
     "index.active_version": (
         "",

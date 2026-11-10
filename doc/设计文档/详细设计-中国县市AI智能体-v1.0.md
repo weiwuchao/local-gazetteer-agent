@@ -28,7 +28,7 @@
 | 关系库    | SQLite                      | ≥3.40       | 24 张表，WAL                                         | PostgreSQL 多一个运维对象                               |
 | 向量库    | Chroma                      | ≥0.5        | `PersistentClient`，每索引版本一个 collection             | FAISS 无法下推过滤（违反 FR-D04）；1.x 原生后端在部分 Windows CPU 上会崩溃，见 backend/README |
 | 向量模型   | **bge-m3**                  | revision 锁定 | 1024 维、8192 ctx、本地 CPU，`sentence-transformers` 加载 | 理由与备选见架构文档 1.5；`bge-large-zh-v1.5` 会截断 800 字降级块  |
-| 重排模型   | **bge-reranker-v2-m3**      | revision 锁定 | cross-encoder，20 候选约 150–400ms                    | 关闭 rerank 则阈值语义变为余弦（D-5）                         |
+| 重排模型   | **bge-reranker-v2-m3**      | revision 锁定 | cross-encoder，20 候选约 150–400ms                    | rerank 必选，不提供关闭路径（D-5）                             |
 | 全文检索   | FTS5                        | 内置          | BM25 通路，外部内容表                                     | `LIKE` 无排序、无 BM25                                |
 | 中文处理   | jieba                       | ≥0.42       | 写入侧分词（`cut_for_search`）                           | 不分词则 BM25 对 CJK 完全失效                             |
 | 密码     | argon2-cffi                 | ≥23         | argon2id                                          | bcrypt 需 cost≥12 才等效，且 72 字节截断                   |
@@ -464,7 +464,7 @@ can_publish = (pending == 0 && rejected == 0 && 自查清单 7 项全过)
 | 0   | `auth` 鉴权与装配    | `AgentInput`（含 scope） | 校验通过的 `AgentState`                       | 30ms                   | scope 为空 → `refuse(permission)`，不空跑 | `scope_size, region_id, preview`    |
 | 1   | `intent` 意图判定   | 问题、记忆槽                | `qa/report/chitchat/write_request` + 置信度 | 100ms（规则）/900ms（含 LLM） | 未命中规则 → 与 s2 合并一次 LLM               | `intent, conf, path=rule\|llm`      |
 | 2   | `rewrite` 查询改写  | 原问题、近 4 轮、记忆槽         | 独立 query + 改写理由                          | 800ms                  | 失败用原问题 + 提示                         | `q_before_len, q_after, changed`    |
-| 3   | `retrieve` 检索   | query、scope           | 片段集（5–8 条，含元数据）                          | 900ms                  | 向量路失败 → 纯 BM25；全空 → 拒答分支            | `hits, top1`                        |
+| 3   | `retrieve` 检索   | query、scope           | 片段集（5–8 条，含元数据）                          | 900ms                  | 任一路不可用 → 直接失败（不降级纯 BM25）；两路均空 → 拒答分支 | `hits, top1`                        |
 | 4   | `judge` 充分性判定   | 片段集、阈值                | `sufficient/insufficient` + 原因码          | 50ms                   | 分数低于阈值 → 拒答                 | `top1, threshold, hits` |
 | 5   | `generate` 生成   | 片段集、约束提示              | 引证档 + 白话解读（流式）                           | TTFT 2.5s              | 超 25s 中断保留已生成                       | `claims, citations, ttft_ms`        |
 | 6   | `validate` 输出校验 | 草稿、片段集                | 终稿或降级稿                                   | 150ms                  | 删断言 / 改 `refuse` / 标未核实             | `checks[], dropped, downgraded`     |
@@ -735,7 +735,8 @@ def s7_deliver(c: AgentState) -> AnswerPayload:
 
 # T1 混合检索
 def t1_hybrid_search(*, q: str, scope: SearchScope,
-                     top_k: int, span: Span) -> RetrievalResult: ...
+                     top_k: int | None = None,
+                     span: Span | None = None) -> RetrievalResult: ...
 
 # T2 上下文扩展
 def t2_context_expand(*, chunk_ids: list[str], window: int = 200,
@@ -876,27 +877,21 @@ if leaked:
 ```python
 # rag/retrievers/bm25.py
 class FtsRetriever(BaseRetriever):
+    scope: SearchScope
+    k: int = 20
+
     def _get_relevant_documents(self, query: str, *, run_manager=None) -> list[Document]:
         if not self.scope.visible_doc_ids:
             return []
-        tokens = [t for t in jieba.cut_for_search(to_simplified(query)) if t.strip()]
-        match = build_match_expr(tokens)             # 见 4.3.2
-        ph = ",".join("?" * len(self.scope.visible_doc_ids))
-        sql = f"""
-          SELECT c.chunk_id, c.content, c.doc_id, c.char_start, c.char_end,
-                 -bm25(chunk_fts) AS score
-          FROM chunk_fts JOIN chunk c ON c.id = chunk_fts.rowid
-          WHERE chunk_fts MATCH ?
-            AND c.region_id = ?
-            AND c.doc_id IN ({ph})
-            AND c.is_searchable = 1
-          ORDER BY bm25(chunk_fts)
-          LIMIT ?"""
-        rows = self.conn.execute(sql, (match, self.scope.region_id,
-                                       *self.scope.visible_doc_ids, self.k)).fetchall()
-        return [Document(page_content=r["content"],
-                         metadata={**dict(r), "bm25_rank": i, "score": normalize_bm25(r["score"])})
-                for i, r in enumerate(rows, 1)]
+        # 写入与查询同一套 jieba 分词，都用原字（不做繁简归一）
+        hits = fts_store.search(
+            query, query_tokens(query), scope=self.scope, limit=self.k)  # 见 4.3.2
+        return [Document(page_content=h.content,
+                         metadata={"chunk_id": h.chunk_id, "doc_id": h.doc_id,
+                                   "char_start": h.char_start, "char_end": h.char_end,
+                                   "ocr_flag": h.ocr_flag, "score": h.score,
+                                   "bm25_rank": i, "fts_fallback": h.fallback})
+                for i, h in enumerate(hits, 1)]
 ```
 
 #### 4.3.1 为什么必须预分词
@@ -923,7 +918,7 @@ def build_match_expr(tokens: list[str]) -> str:
     return f"({head}) OR ({head} AND ({tail}))"
 ```
 
-命中 < 5 条时回退纯 OR；仍 0 命中则 `content LIKE '%q%'`（限 scope 内）并记 `fts_fallback=1`。三级回退的顺序是"精确 → 放宽 → 兜底"，每一级都要打点，否则调优时看不出是哪一级在起作用。
+命中 < 5 条时回退纯 OR；仍 0 命中则 `content LIKE '%q%'`（限 scope 内）。`LIKE` 必须转义 `%`、`_`、`\`，否则用户输入的 `%` 会变成通配符。三级回退的顺序是"精确 → 放宽 → 兜底"，命中级别写进 `Document.metadata["fts_fallback"]`（`and` / `or` / `like`）并打日志，否则调优时看不出是哪一级在起作用。BM25 分只用于排序与诊断，不参与最终阈值判定（最终分只来自 rerank）。SQL 落在 `repo/chunk_repo.py`，`rag/fts_store.py` 只负责表达式与结果映射（SQL 只能写在 `app/repo/**`）。
 
 ### 4.4 RRF 融合与 rerank
 
@@ -944,9 +939,10 @@ def hybrid_search(q: str, scope: SearchScope, *, k=20, rrf_k=60,
             e[f"{tag}_rank"] = rank
 
     cand = sorted(fused.values(), key=lambda x: -x["rrf"])[: max(2 * k, 40)]
-    scores = reranker.score_batch([(q, normalize_for_rerank(c["text"])) for c in cand])
+    # rag/rerank.py: logits -> sigmoid -> 0-1
+    scores = score_pairs(q, [normalize_for_rerank(c["text"]) for c in cand])
     for c, s in zip(cand, scores):
-        c["final_score"] = float(s)                  # score_batch 内部已过 sigmoid，见 4.7.4
+        c["final_score"] = s.prob
 
     cand.sort(key=lambda x: -x["final_score"])
     picked = [c for c in cand if c["final_score"] >= threshold][:top_n]
@@ -1068,9 +1064,11 @@ class RagModels:
             self.fp.model, revision=self.fp.revision,
             device=self.device, cache_folder=cfg["llm.embedding.cache_dir"])
         # 池化方式由模型自带的 1_Pooling/config.json 决定（bge-m3 = CLS），不要手写 mean pooling
-        self.reranker = (
-            CrossEncoder(cfg["llm.rerank.model"], max_length=512, device=self.device)
-            if cfg["llm.rerank.model"] != "none" else None)
+        # rerank 必选：llm.rerank.model 为空或 none 时直接 RagUnavailable
+        # activation_fn=Identity：ST >= 4 对单标签默认 Sigmoid，必须关掉才能拿到 logits
+        self.reranker = CrossEncoder(
+            cfg["llm.rerank.model"], max_length=512, device=self.device,
+            activation_fn=torch.nn.Identity())
 
     def warmup(self):
         """冷启动第一次编码约 1–2s，必须放在启动阶段，否则会被算进首个用户的 TTFT"""
@@ -1094,7 +1092,7 @@ if probe["embeddings"] and len(probe["embeddings"][0]) != models.fp.dim:
 **依赖/模型缺失时的启动行为（不降级）**：`chromadb`、`torch`、`sentence-transformers` 或权重
 没装好时，入库/检索链路**直接失败**并抛出 `RagUnavailable`（异常文本只给一句原因，修复办法看
 `backend/README.md`）；服务本身仍可启动，但要到第一次用到向量时才报错。维度不一致同样直接
-拒绝（上面第二个校验）。不实现"降级纯 BM25"这类兜底路径——本项目只练 agent 核心。
+拒绝（上面第二个校验）。不实现"降级纯 BM25"这类兜底路径——BM25 是双路召回的正常一路，不是向量失败后的替代；任一路不可用都直接失败，避免静默降质。
 
 #### 4.7.2 三个文本口径，一个字都不能混
 
@@ -1162,7 +1160,7 @@ def handle_doc_embed(task):
 ```
 
 - **可中断续跑**：任务不保存"处理到第几条"，而靠 `chunk.index_state='pending'` 反查。进程被杀后重启，任务重新入队，已 `indexed` 的不会被重复处理。这比在任务里记游标更抗崩溃。
-- **失败不阻塞润色**：`document.status` 由解析成功决定（`proofreading`），与索引成功无关。索引失败**不降级**（不实现纯 BM25 兜底），失败片段标 `stale`，重跑入库补齐。
+- **失败不阻塞润色**：`document.status` 由解析成功决定（`proofreading`），与索引成功无关。索引失败**不降级**（BM25 只作为双路召回的一路，不承担索引失败的兜底），失败片段标 `stale`，重跑入库补齐。
 - **超时**：单批 30s 上限；整体任务走 `limits.task_timeout_ms`，超时后任务置 `failed` 但已索引的 chunk 保留。
 - **不要为了"跑满 CPU"开多线程编码**：PyTorch 自身已用 `torch.set_num_threads`；再叠一层线程池会与 worker 线程争抢，反而更慢。调 `torch.set_num_threads(物理核数 - 1)`，留一个核给 API 进程。
 
@@ -1172,19 +1170,23 @@ def handle_doc_embed(task):
 
 ```python
 # rag/rerank.py
-import numpy as np
+import math
 
-def rerank(query: str, cands: list[dict], top_n: int) -> list[dict]:
-    if models.reranker is None:                     # 关闭 rerank：退回余弦
-        for c in cands: c["final_score"] = c["score"]
-        return sorted(cands, key=lambda c: -c["final_score"])[:top_n]
-    pairs = [(query, c["text"]) for c in cands]
+def _sigmoid(x: float) -> float:
+    if x >= 0:
+        return 1.0 / (1.0 + math.exp(-x))
+    z = math.exp(x)
+    return z / (1.0 + z)
+
+def score_pairs(query: str, texts: list[str]) -> list[RerankScore]:
+    pairs = [(query, t) for t in texts]
+    # 加载时已显式 activation_fn=Identity（见 4.7.1），这里拿到的是 logits。
     logits = models.reranker.predict(pairs, batch_size=16, show_progress_bar=False)
-    probs = 1.0 / (1.0 + np.exp(-np.asarray(logits)))     # ← 不做这一步，0.62 就永远比不到
-    for c, p in zip(cands, probs):
-        c["final_score"] = float(p)
-    return sorted(cands, key=lambda c: -c["final_score"])[:top_n]
+    # ← 不做 sigmoid，0.62 就永远比不到；logit 与 prob 都返回，供 span 自证
+    return [RerankScore(prob=_sigmoid(float(x)), logit=float(x)) for x in logits]
 ```
+
+`rag/retrievers/rerank.py` 只做两件事：把 `prob` 写进 `final_score`，以及按阈值挑选（见 4.4）。`models.reranker` 为 `None` 不是合法状态——`llm.rerank.model` 为空或 `none` 时加载阶段就抛 `RagUnavailable`，不存在"关闭 rerank 退回余弦"的分支。
 
 若不转 sigmoid，`final_score` 会是 −3.2 之类的值，与 0.62 比较时**恒为不足**，系统会稳定地对所有问题拒答——而日志里看分数确实"低于阈值"，非常难排查。这条已在 `retrieval.score_threshold` 的注释里标注（架构 6.1）。
 
@@ -1345,7 +1347,7 @@ c = await loop.run_in_executor(RETRIEVAL_POOL, s3_retrieve, c)
 
 **陷阱一：向量化输入用错了字符串。** `content`（原字）与 `content_seg`（带空格）都能跑通，`encode()` 不会报错，但召回率会掉。**做法**：向量化入口只接受 `content`，函数签名为 `embed_documents(texts: list[str])` 且在 docstring 里写死"入参必须是原文、不分词、不转简"；`documents=` 传同一个 `content`。**验证**：拿一条已知 chunk，断言 `collection.get(ids=[cid])["documents"][0] == chunk.content`，且重复 `embed_documents([content])` 与库中向量余弦 ≈ 1.0。
 
-**陷阱二：rerank 的 logits 没过 sigmoid。** `final_score` 会是 −4.7 之类的负数，与 `0.62` 比较永远"不足"，系统对所有问题**稳定拒答**，而日志显示"分数低于阈值"，完全合理。**做法**：`rerank()` 内部统一 `1/(1+exp(-logit))`，并在 `agent_span.detail` 里同时记 `logit` 与 `prob` 两个字段以自证。**验证**：单测喂一个已知高度相关的 query-passage 对，断言 `0 < final_score < 1`；再断言关闭 rerank 时 `final_score == 余弦 ∈ [−1,1]`，两者不可混。
+**陷阱二：rerank 的 logits 没过 sigmoid。** `final_score` 会是 −4.7 之类的负数，与 `0.62` 比较永远"不足"，系统对所有问题**稳定拒答**，而日志显示"分数低于阈值"，完全合理。**做法**：`rerank()` 内部统一 `1/(1+exp(-logit))`，并在 `agent_span.detail` 里同时记 `logit` 与 `prob` 两个字段以自证。**验证**：单测喂一个已知高度相关的 query-passage 对，断言 `0 < final_score < 1`；再断言 `final_score` 与原始 logit 的 sigmoid 值一致，两者不可混。
 
 **陷阱三：换了 embedding 却复用旧 collection。** Chroma 对维度不一致的 `upsert` 有时会静默接受（写入被丢弃或分片错位），`query` 也不一定抛错，表现为"新语料怎么都检索不到"。**做法**：`index_version` 编码模型指纹（D-7），collection 名带版本，启动自检比对维度（4.7.1）。**验证**：故意把 `dim` 改成 768 启动，断言进程**拒绝启动**并给出明确错误信息——这个负向测试必须写，否则自检代码会在某次重构中被删掉。
 
@@ -1664,7 +1666,7 @@ export async function streamChat(body: ChatRequest, onEvent: (e: SseEvent) => vo
 | **A-01** | 意图判定的规则集先覆盖"写操作 / 报告 / 闲聊"三类，其余一律按 `qa` 处理 | 漏判为 `qa` 是安全失败（多走一次检索），漏判为 `boundary` 是体验失败（拒答一个本可回答的问题）。宁可多检索 | 若规则误判率高，需把 `qa` 也交给 LLM 判定，意图阶段预算从 100ms 升到 900ms |
 | **A-02** | 报告模板的章节数固定为 5 / 4 / 3，章节标题如 2.2 所示 | 需求只给"3 个模板"，未给章节。给出默认值可让 P2 直接跑通，后续按语料调整 | 若用户需要自定义模板，`report.params_json` 已预留，但大纲生成需支持"给定章节"模式 |
 | **A-03** | 单节报告生成沿用 25s 工具链超时，整篇总预算 180s、节数 ≤6 | C-13 的落地。超 6 节时按"合并相近章节"处理，不拆更多节 | 若模板要 10 节，需改为并发生成（但会与在线问答抢 CPU，见架构 2.5） |
-| **A-04** | `retrieval.score_threshold` 初值 0.62，作用于 **sigmoid 后的 rerank 分**；若 `llm.rerank.model='none'`，则退化为向量余弦 | 需求只在示例中出现 0.62，未定为规格（C-06）。rerank 模型已按 D-7 定为 bge-reranker-v2-m3，故 0.62 可先按该家族的概率分布起用，P0 标定后写回 | 关闭 rerank 时必须重标（余弦分布与 cross-encoder 概率分布形态不同）；换 embedding 也要重标（4.7.5 第 6 步） |
+| **A-04** | `retrieval.score_threshold` 初值 0.62，作用于 **sigmoid 后的 rerank 分**；rerank 必选，不存在关闭后改用余弦的路径 | 需求只在示例中出现 0.62，未定为规格（C-06）。rerank 模型已按 D-7 定为 bge-reranker-v2-m3，故 0.62 可先按该家族的概率分布起用，P0 标定后写回 | 换 embedding 或 rerank 模型都要重标（4.7.5 第 6 步） |
 
 ### 8.3 需求未明确、本文按工程惯例补齐的部分
 
@@ -1692,7 +1694,7 @@ export async function streamChat(body: ChatRequest, onEvent: (e: SseEvent) => vo
 | `llm.embedding.device` | `cpu` | `cuda` 可选 |
 | `llm.embedding.cache_dir` | `data/models` | 配合 `HF_HUB_OFFLINE=1` 离线加载 |
 | `llm.embedding.auto_download` | true | 首次使用自动下载；失败时打印手动下载地址与命令 |
-| `llm.rerank.model` | `BAAI/bge-reranker-v2-m3` | `none` 时阈值语义变为余弦；输出须过 sigmoid（4.7.4） |
+| `llm.rerank.model` | `BAAI/bge-reranker-v2-m3` | 必选；为空或 `none` 时加载阶段抛 `RagUnavailable`；输出须过 sigmoid（4.7.4） |
 | `retrieval.top_k_vec` | 20 | 向量路召回数 |
 | `retrieval.top_k_bm25` | 20 | 全文路召回数 |
 | `retrieval.rerank_top_n` | 8 | 送生成的上限 |

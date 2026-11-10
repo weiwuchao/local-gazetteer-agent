@@ -88,7 +88,7 @@
 | 向量库 | Chroma（PersistentClient） | ≥0.5（1.x 的 Windows 原生后端在部分 CPU 上会崩溃，见 backend/README） | 独立于 SQLite 的专用向量存储；`where` 支持 `$and/$in`，能把权限过滤下推 | FAISS（过滤只能取回后做，违反约束 3）；内存 numpy（重启即丢） |
 | 全文检索 | SQLite FTS5 + jieba | FTS5 内置 | 与关系库同事务，语料下线可与 `is_searchable` 同时生效 | Elasticsearch（重）；纯 `LIKE`（无 BM25 排序） |
 | 向量模型 | **BAAI/bge-m3**（本地） | revision 锁定 | 1024 维、8192 token 上下文、中文与繁体鲁棒、与 rerank 同家族（D-7） | 见 1.5 对比表：`bge-large-zh-v1.5`（512 token 会截断降级块）、商用 API（按量计费且不可离线） |
-| 重排模型 | **BAAI/bge-reranker-v2-m3**（本地） | revision 锁定 | cross-encoder，输出 0–1 相关度，与 bge-m3 同家族、分数分布一致 | `bge-reranker-base`（效果弱一档）；关闭 rerank（阈值语义变为余弦，D-5） |
+| 重排模型 | **BAAI/bge-reranker-v2-m3**（本地） | revision 锁定 | cross-encoder，输出 0–1 相关度，与 bge-m3 同家族、分数分布一致 | `bge-reranker-base`（效果弱一档）；rerank 必选，不提供关闭路径（D-5） |
 | 前端 | Vue 3 + Vite | Vue ≥3.4 | 引用卡、阶段轨迹、润色逐段 diff 都是高频状态更新，组件化收益明显 | 原生 JS（原型阶段够用，功能一多状态难管）；React（团队更熟 Vue 的 SFC 写法） |
 | 异步任务 | 进程内 `queue.Queue` + `task` 表 | 标准库 | 任务状态以 DB 为真相源，队列只做唤醒，崩溃可恢复 | Celery（需 Redis，与单机定位冲突）；APScheduler（轮询延迟不可控） |
 | 认证 | JWT + argon2id | PyJWT / argon2-cffi | access 短有效期 + `token_version` 比对，无需令牌黑名单表 | Session + Cookie（SPA 跨端口调试麻烦） |
@@ -602,7 +602,7 @@ worker[doc_embed]
 **两个刻意的顺序设计**
 
 1. **先落盘再写库**：文件写成功才 INSERT `document`，写库失败删文件。反过来会产生"库里有记录、文件不存在"的坏数据，且无法自动修复。
-2. **向量化失败直接报错**：`proofreading` 状态由解析成功决定，不由索引成功决定；但索引失败不降级（本项目不实现纯 BM25 兜底），失败片段标 `stale`，重跑入库即可补齐。
+2. **向量化失败直接报错**：`proofreading` 状态由解析成功决定，不由索引成功决定；但索引失败不降级（BM25 只作为双路召回的一路，不承担索引失败的兜底），失败片段标 `stale`，重跑入库即可补齐。
 
 ### 4.4 链路三：报告大纲 → 逐节成文 → 导出
 
@@ -895,7 +895,7 @@ index_version = idx__{model}__{dim}__{chunk_size}__v1
 | `llm.embedding.device` | string | `cpu` | `cuda` 可选；影响索引耗时与查询延迟 |
 | `llm.embedding.cache_dir` | string | `data/models` | 权重缓存目录；配合 `HF_HUB_OFFLINE=1` 离线加载 |
 | `llm.embedding.auto_download` | bool | true | 首次使用是否自动下载权重；失败时打印手动下载地址 |
-| `llm.rerank.model` | string | `BAAI/bge-reranker-v2-m3` | 可为 `none`（关闭 rerank，阈值语义变为余弦，D-5） |
+| `llm.rerank.model` | string | `BAAI/bge-reranker-v2-m3` | 必选；为空或 `none` 时加载阶段抛 `RagUnavailable`（D-5） |
 | `retrieval.top_k_vec` / `top_k_bm25` | int | 20 / 20 | FR-D03 |
 | `retrieval.rerank_top_n` | int | 8 | 送生成的片段数上限 |
 | `retrieval.score_threshold` | float | 0.62（待标定） | **只作用于 rerank 分**（D-5） |

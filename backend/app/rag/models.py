@@ -171,7 +171,15 @@ def _load_reranker(cfg: EmbeddingConfig) -> Any:
     if not model or model == "none":
         raise RagUnavailable("llm.rerank.model 未配置；rerank 是核心步骤，不能留空")
     sentence_transformers = require_module("sentence_transformers")
-    return sentence_transformers.CrossEncoder(model, max_length=512, device=cfg.device)
+    torch = require_module("torch")
+    # sentence-transformers >=4 对单标签 cross-encoder 默认套 Sigmoid；
+    # 显式关掉，保证 predict() 返回 logits，sigmoid 只在 rag.rerank 里做一次。
+    return sentence_transformers.CrossEncoder(
+        model,
+        max_length=512,
+        device=cfg.device,
+        activation_fn=torch.nn.Identity(),
+    )
 
 
 # ---------------------------------------------------------------- 进程级单例

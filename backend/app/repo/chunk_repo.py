@@ -195,3 +195,57 @@ def delete_by_doc(doc_id: str) -> int:
 def rebuild_fts() -> None:
     """FTS5 外部内容表重建（架构 5.8）。"""
     db.get_write_queue().execute("INSERT INTO chunk_fts(chunk_fts) VALUES('rebuild')")
+
+
+def search_fts(
+    match_expr: str,
+    *,
+    region_id: str,
+    doc_ids: Sequence[str],
+    limit: int,
+) -> list[sqlite3.Row]:
+    """在可见文档内做 FTS5 MATCH；SQL 只允许出现在 repo 层。"""
+    if not doc_ids or limit <= 0:
+        return []
+    placeholders = ",".join("?" * len(doc_ids))
+    sql = f"""
+      SELECT c.chunk_id, c.doc_id, c.content, c.char_start, c.char_end,
+             c.ocr_flag, -bm25(chunk_fts) AS score
+      FROM chunk_fts JOIN chunk c ON c.id = chunk_fts.rowid
+      WHERE chunk_fts MATCH ?
+        AND c.region_id = ?
+        AND c.doc_id IN ({placeholders})
+        AND c.is_searchable = 1
+      ORDER BY bm25(chunk_fts)
+      LIMIT ?"""
+    return db.query_all(
+        sql,
+        (match_expr, region_id, *doc_ids, limit),
+    )
+
+
+def search_content_like(
+    pattern: str,
+    *,
+    region_id: str,
+    doc_ids: Sequence[str],
+    limit: int,
+) -> list[sqlite3.Row]:
+    """MATCH 三级回退的最后一级：scope 内的 LIKE 兜底。"""
+    if not doc_ids or limit <= 0:
+        return []
+    placeholders = ",".join("?" * len(doc_ids))
+    sql = f"""
+      SELECT c.chunk_id, c.doc_id, c.content, c.char_start, c.char_end,
+             c.ocr_flag, 0.0 AS score
+      FROM chunk c
+      WHERE c.region_id = ?
+        AND c.doc_id IN ({placeholders})
+        AND c.is_searchable = 1
+        AND c.content LIKE ? ESCAPE '\\'
+      ORDER BY c.doc_id, c.seq
+      LIMIT ?"""
+    return db.query_all(
+        sql,
+        (region_id, *doc_ids, pattern, limit),
+    )
